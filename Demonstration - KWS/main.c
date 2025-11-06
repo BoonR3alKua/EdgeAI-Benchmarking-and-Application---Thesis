@@ -1,29 +1,6 @@
-/******************************************************************************
- *
- * Copyright (C) 2022-2023 Maxim Integrated Products, Inc. (now owned by 
- * Analog Devices, Inc.),
- * Copyright (C) 2023-2024 Analog Devices, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- ******************************************************************************/
-
 /**
  * @file    main.c
  * @brief   Main for KWS20
- * @details
- *
- *
  */
 
 /* **** Includes **** */
@@ -44,27 +21,19 @@
 #include "tmr.h"
 #include "dma.h"
 #include "led.h"
-#ifndef BOARD_AUD01_REVA
 #include "pb.h"
-#endif
 #include "cnn.h"
-#ifdef BOARD_FTHR_REVA
-#include "tft_ili9341.h"
-#endif
 #include <math.h>
 
-#define VERSION "3.2.3 (5/05/23)" // trained with background noise and more unknown keywords
+#define VERSION "1" // trained with background noise and more unknown keywords
 /* **** Definitions **** */
 #define CLOCK_SOURCE 0 // 0: IPO,  1: ISO, 2: IBRO
-#define SLEEP_MODE 2 // 0: no sleep,  1: sleep,   2:deepsleep(LPM)
+#define SLEEP_MODE 0 // 0: no sleep,  1: sleep,   2:deepsleep(LPM)
 #define WUT_ENABLE // enables WUT timer
 #define WUT_USEC 380 // continuous WUT duration close to I2S polling time in usec
 //#define ENERGY            // if enabled, turn off LED2, toggle LED1 for 10sec for energy measurements on Power monitor (System Power)
 #define SAMPLE_RATE 16000
 #define EXT_I2S_FREQ 12288000
-
-#if SLEEP_MODE == 2 // need WakeUp Timer (WUT) for deepsleep (LPM)
-#endif
 
 /* Enable/Disable Features */
 #define ENABLE_PRINT_ENVELOPE // enables printing average waveform envelope for samples
@@ -98,13 +67,12 @@
 #define PREAMBLE_SIZE 30 * CHUNK // how many samples before beginning of a keyword to include
 #define INFERENCE_THRESHOLD 91 // min probability (0-100) to accept an inference
 
-
+/* DEBUG Print */
 #define PR_DEBUG(fmt, args...) \
     if (1)                     \
     printf(fmt, ##args)
 #define PR_INFO(fmt, args...) \
-    if (1)                    \
-    printf(fmt, ##args)
+    if (1)
 
 /* **** Globals **** */
 volatile uint32_t cnn_time; // Stopwatch
@@ -140,6 +108,7 @@ const char keywords[NUM_OUTPUTS][10] = { "UP",    "DOWN", "LEFT",   "RIGHT", "ST
                                          "YES",   "NO",   "ON",     "OFF",   "ONE",   "TWO",
                                          "THREE", "FOUR", "FIVE",   "SIX",   "SEVEN", "EIGHT",
                                          "NINE",  "ZERO", "Unknown" };
+
 
 void i2s_isr(void)
 {
@@ -239,6 +208,7 @@ int main(void)
     }
 
     SystemCoreClockUpdate();
+
     /* Enable microphone power on Feather board only if codec is not enabled */
     Microphone_Power(POWER_ON);
 
@@ -252,14 +222,22 @@ int main(void)
     /* Configure P2.5, turn on the CNN Boost */
     cnn_boost_enable(MXC_GPIO2, MXC_GPIO_PIN_5);
 
+    PR_INFO("\n\\nKeyword Spotting\nVer. %s \n", VERSION);
     PR_INFO("\n***** Init *****\n");
     memset(pAI85Buffer, 0x0, sizeof(pAI85Buffer));
+
+    PR_DEBUG("ChunkBuff: %d\n", sizeof(pChunkBuff));
+    PR_DEBUG("Buffer: %d\n", sizeof(pAI85Buffer));
     /* Bring state machine into consistent state */
     cnn_init();
     /* Load kernels */
     cnn_load_weights();
     /* Configure state machine */
     cnn_configure();
+
+#if SLEEP_MODE == 1
+    NVIC_EnableIRQ(CNN_IRQn);
+#endif
 
 #ifdef WUT_ENABLE
     // Get ticks based off of microseconds
@@ -302,11 +280,16 @@ int main(void)
 
         /* Read from Mic driver to get CHUNK worth of samples, otherwise next sample*/
         if (MicReadChunk(&avg) == 0) {
+
+#if SLEEP_MODE == 1
+            __WFI();
+#elif SLEEP_MODE == 2
 #ifdef WUT_ENABLE
-#endif
             MXC_LP_ClearWakeStatus();
             SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk; // SLEEPDEEP=1
             __WFI();
+#endif
+#endif // #if SLEEP_MODE == 1
             continue;
         }
 
@@ -317,6 +300,7 @@ int main(void)
             continue;
 
 #ifdef ENABLE_SILENCE_DETECTION // disable to start collecting data immediately.
+
         /* if we have not detected voice, check the average*/
         if (procState == SILENCE) {
             /* compute average, proceed if greater than threshold */
@@ -351,7 +335,6 @@ int main(void)
             /* if this is the last sample and there are not enough samples to
              * feed to CNN, or if it is long silence after keyword,  append with zero (for reading file)
              */
-
             if (avgSilenceCounter > SILENCE_COUNTER_THRESHOLD)
             {
                 memset(pChunkBuff, 0, CHUNK);
@@ -460,12 +443,31 @@ int main(void)
                     PR_DEBUG("ERROR: Starting CNN! \n");
                     fail();
                 }
+
+#if SLEEP_MODE == 0
+
+                /* Wait for CNN  to complete */
+                while (cnn_time == 0) {
+                    __WFI();
+                }
+
+#elif SLEEP_MODE == 1
+
+                while (cnn_time == 0) {
+                    __WFI();
+                }
+
+#elif SLEEP_MODE == 2
                 SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk; // SLEEPDEEP=1
 
                 while (cnn_time == 0) {
+#ifdef WUT_ENABLE
                     MXC_LP_ClearWakeStatus();
                     __WFI();
+#endif
                 }
+
+#endif // #if SLEEP_MODE==0
 
                 /* Read CNN result */
                 cnn_unload((uint32_t *)ml_data);
@@ -540,7 +542,6 @@ int main(void)
 
 /* **************************************************************************** */
 
-#ifdef ENABLE_MIC_PROCESSING
 void I2SInit(void)
 {
     mxc_i2s_req_t req;
@@ -581,7 +582,6 @@ void I2SInit(void)
     MXC_I2S_RXEnable();
     __enable_irq();
 }
-#endif
 
 /* **************************************************************************** */
 uint8_t check_inference(q15_t *ml_soft, int32_t *ml_data, int16_t *out_class, double *out_prob)
