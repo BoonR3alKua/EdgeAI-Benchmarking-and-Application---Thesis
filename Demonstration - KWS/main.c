@@ -50,21 +50,13 @@
 #include "cnn.h"
 #ifdef BOARD_FTHR_REVA
 #include "tft_ili9341.h"
-#ifdef ENABLE_CODEC_MIC
-#include "i2c.h"
-#include "max9867.h"
-#endif
-#endif
-#ifdef BOARD_EVKIT_V1
-#include "tft_ssd2119.h"
-#include "bitmap.h"
 #endif
 #include <math.h>
 
 #define VERSION "3.2.3 (5/05/23)" // trained with background noise and more unknown keywords
 /* **** Definitions **** */
 #define CLOCK_SOURCE 0 // 0: IPO,  1: ISO, 2: IBRO
-#define SLEEP_MODE 0 // 0: no sleep,  1: sleep,   2:deepsleep(LPM)
+#define SLEEP_MODE 2 // 0: no sleep,  1: sleep,   2:deepsleep(LPM)
 #define WUT_ENABLE // enables WUT timer
 #define WUT_USEC 380 // continuous WUT duration close to I2S polling time in usec
 //#define ENERGY            // if enabled, turn off LED2, toggle LED1 for 10sec for energy measurements on Power monitor (System Power)
@@ -72,22 +64,6 @@
 #define EXT_I2S_FREQ 12288000
 
 #if SLEEP_MODE == 2 // need WakeUp Timer (WUT) for deepsleep (LPM)
-#ifndef WUT_ENABLE
-#define WUT_ENABLE
-#endif
-#endif
-
-#ifdef SEND_MIC_OUT_SDCARD
-#undef WUT_ENABLE
-#warning !!! Disabling WUT_ENABLE option when SD card is enabled !!!
-#ifdef TFT_ENABLE
-#undef TFT_ENABLE
-#warning !!! TFT cannot be used when SD card is enabled  !!!
-#endif
-#endif
-
-#ifdef TFT_ENABLE
-#define DISPLAY_AUDIO // displays audio waveform on TFT
 #endif
 
 /* Enable/Disable Features */
@@ -97,11 +73,7 @@
 #undef EIGHT_BIT_SAMPLES // samples from Mic or Test vectors are eight bit, otherwise 16-bit
 #define ENABLE_MIC_PROCESSING // enables capturing Mic, otherwise a header file Test vector is used as sample data
 
-#ifndef ENABLE_MIC_PROCESSING
-#include "kws_five.h"
-#else
 #undef ENABLE_PRINT_ENVELOPE // print is slow with live mic data
-#endif
 
 #define CON_BAUD 1 * 115200
 
@@ -117,7 +89,6 @@
 /*-----------------------------*/
 
 /* Adjustable Parameters */
-#ifdef ENABLE_MIC_PROCESSING
 #define SAMPLE_SCALE_FACTOR \
     4 // multiplies 16-bit samples by this scale factor before converting to 8-bit
 #define THRESHOLD_HIGH 350 // voice detection threshold to find beginning of a keyword
@@ -126,37 +97,14 @@
     20 // [>20] number of back to back CHUNK periods with avg < THRESHOLD_LOW to declare the end of a word
 #define PREAMBLE_SIZE 30 * CHUNK // how many samples before beginning of a keyword to include
 #define INFERENCE_THRESHOLD 91 // min probability (0-100) to accept an inference
-#else
-#define SAMPLE_SCALE_FACTOR \
-    1 // multiplies 16-bit samples by this scale factor before converting to 8-bit
-#define THRESHOLD_HIGH 130 // voice detection threshold to find beginning of a keyword
-#define THRESHOLD_LOW 70 // voice detection threshold to find end of a keyword
-#define SILENCE_COUNTER_THRESHOLD \
-    20 // [>20] number of back to back CHUNK periods with avg < THRESHOLD_LOW to declare the end of a word
-#define PREAMBLE_SIZE 30 * CHUNK // how many samples before beginning of a keyword to include
-#define INFERENCE_THRESHOLD 49 // min probability (0-100) to accept an inference
-#endif
 
-#if defined(ENABLE_CODEC_MIC)
-#define PMIC_AUDIO_I2C MXC_I2C1
-#endif
 
-/* DEBUG Print */
-#ifdef ENERGY
-#define PR_DEBUG(fmt, args...) \
-    if (0)                     \
-    printf(fmt, ##args)
-#define PR_INFO(fmt, args...) \
-    if (1)                    \
-    printf(fmt, ##args)
-#else
 #define PR_DEBUG(fmt, args...) \
     if (1)                     \
     printf(fmt, ##args)
 #define PR_INFO(fmt, args...) \
     if (1)                    \
     printf(fmt, ##args)
-#endif
 
 /* **** Globals **** */
 volatile uint32_t cnn_time; // Stopwatch
@@ -164,10 +112,6 @@ volatile uint32_t fileCount = 0;
 
 int8_t micBuff[SAMPLE_SIZE];
 int micBufIndex = 0;
-
-#if defined(SEND_MIC_OUT_SDCARD)
-int8_t snippet[SAMPLE_SIZE];
-#endif
 
 int utteranceIndex = 0;
 uint16_t utteranceAvg = 0;
@@ -197,36 +141,14 @@ const char keywords[NUM_OUTPUTS][10] = { "UP",    "DOWN", "LEFT",   "RIGHT", "ST
                                          "THREE", "FOUR", "FIVE",   "SIX",   "SEVEN", "EIGHT",
                                          "NINE",  "ZERO", "Unknown" };
 
-#ifdef SEND_MIC_OUT_SDCARD
-static char fileName[16];
-unsigned int snippetLength = 16384;
-#endif
-
-#ifndef ENABLE_MIC_PROCESSING
-
-#ifndef EIGHT_BIT_SAMPLES
-const int16_t voiceVector[] = KWS20_TEST_VECTOR;
-#else
-const int8_t voiceVector[] = KWS20_TEST_VECTOR;
-#endif
-
-int8_t MicReader(int32_t *sample);
-
-#else
 void i2s_isr(void)
 {
     i2s_flag = 1;
     /* Clear I2S interrupt flag */
     MXC_I2S_ClearFlags(MXC_F_I2S_INTFL_RX_THD_CH0);
 }
-#endif
 
 /* **** Functions Prototypes **** */
-#ifdef SEND_MIC_OUT_SDCARD
-extern int sd_init(void);
-extern int mkdirSoundSnippet_CD();
-extern int writeSoundSnippet(char *snippetFilename, unsigned int snippetLength, int8_t *snippet);
-#endif
 void fail(void);
 uint8_t cnn_load_data(uint8_t *pIn);
 uint8_t MicReadChunk(uint16_t *avg);
@@ -237,21 +159,6 @@ void I2SInit(void);
 static void codec_init(void);
 void HPF_init(void);
 int16_t HPF(int16_t input);
-#ifdef TFT_ENABLE
-void TFT_Intro(void);
-void TFT_Print(char *str, int x, int y, int font, int length);
-void TFT_End(uint16_t words);
-#ifdef BOARD_EVKIT_V1
-int image_bitmap = ADI_256_bmp;
-int font_1 = urw_gothic_12_white_bg_grey;
-int font_2 = urw_gothic_13_white_bg_grey;
-#endif
-#ifdef BOARD_FTHR_REVA
-int image_bitmap = (int)&img_1_rgb565[0];
-int font_1 = (int)&Liberation_Sans16x16[0];
-int font_2 = (int)&Liberation_Sans16x16[0];
-#endif
-#endif //#ifdef TFT_ENABLE
 
 int32_t tot_usec = -100000;
 #ifdef WUT_ENABLE
@@ -281,29 +188,6 @@ int console_UART_init(uint32_t baud)
 
     return 0;
 }
-
-#ifdef SEND_MIC_OUT_SERIAL
-static void console_uart_send_byte(uint8_t value)
-{
-    while (MXC_UART_WriteCharacter(MXC_UART_GET_UART(CONSOLE_UART), value) == E_OVERFLOW) {}
-}
-#endif
-
-#ifdef DISPLAY_AUDIO
-static uint32_t setColor(int r, int g, int b)
-{
-    uint32_t color;
-
-#ifdef BOARD_EVKIT_V1
-    color = (0x01000100 | ((b & 0xF8) << 13) | ((g & 0x1C) << 19) | ((g & 0xE0) >> 5) | (r & 0xF8));
-#endif
-#ifdef BOARD_FTHR_REVA
-    color = RGB(r, g, b); // convert to RGB565
-#endif
-
-    return color;
-}
-#endif
 
 /* **************************************************************************** */
 
@@ -355,15 +239,8 @@ int main(void)
     }
 
     SystemCoreClockUpdate();
-
-#ifdef ENABLE_MIC_PROCESSING
-#if defined(ENABLE_CODEC_MIC)
-    codec_init();
-#elif defined(BOARD_FTHR_REVA)
     /* Enable microphone power on Feather board only if codec is not enabled */
     Microphone_Power(POWER_ON);
-#endif
-#endif
 
     // Initialize UART
     console_UART_init(CON_BAUD);
@@ -375,35 +252,14 @@ int main(void)
     /* Configure P2.5, turn on the CNN Boost */
     cnn_boost_enable(MXC_GPIO2, MXC_GPIO_PIN_5);
 
-    PR_INFO("\n\nANALOG DEVICES \nKeyword Spotting Demo\nVer. %s \n", VERSION);
     PR_INFO("\n***** Init *****\n");
     memset(pAI85Buffer, 0x0, sizeof(pAI85Buffer));
-
-    PR_DEBUG("pChunkBuff: %d\n", sizeof(pChunkBuff));
-    PR_DEBUG("pAI85Buffer: %d\n", sizeof(pAI85Buffer));
-#ifdef SEND_MIC_OUT_SDCARD
-    /* SD card support */
-    sd_init();
-#endif
     /* Bring state machine into consistent state */
     cnn_init();
     /* Load kernels */
     cnn_load_weights();
     /* Configure state machine */
     cnn_configure();
-#ifdef SEND_MIC_OUT_SDCARD
-    /* Make Incremental Directory */
-    if (mkdirSoundSnippet_CD() != E_NO_ERROR) {
-        printf("*** !!!SD ERROR (mounting) !!! ***\n");
-        LED_Off(LED_GREEN);
-        LED_On(LED_RED); // Permanent Red Led
-        while (1) {}
-    }
-#endif
-
-#if SLEEP_MODE == 1
-    NVIC_EnableIRQ(CNN_IRQn);
-#endif
 
 #ifdef WUT_ENABLE
     // Get ticks based off of microseconds
@@ -434,36 +290,7 @@ int main(void)
     I2SInit();
 #endif
 
-#ifdef TFT_ENABLE
-    MXC_Delay(500000);
-    PR_DEBUG("\n*** Init TFT ***\n");
-#ifdef BOARD_EVKIT_V1
-    MXC_TFT_Init();
-    MXC_TFT_ClearScreen();
-
-    MXC_TFT_ShowImage(0, 0, image_bitmap);
-    MXC_Delay(1000000);
-
-    MXC_TFT_SetPalette(logo_white_bg_darkgrey_bmp);
-    MXC_TFT_SetBackGroundColor(4);
-    PR_INFO("if RED LED is not on, disconnect PICO SWD and power cycle!\n");
-#endif
-#ifdef BOARD_FTHR_REVA
-    /* Initialize TFT display */
-    MXC_TFT_Init(MXC_SPI0, 1, NULL, NULL);
-    MXC_TFT_SetRotation(ROTATE_90);
-    MXC_TFT_ShowImage(0, 0, image_bitmap);
-    MXC_Delay(1000000);
-    MXC_TFT_SetBackGroundColor(4);
-    MXC_TFT_SetForeGroundColor(WHITE); // set chars to white
-#endif
-
-    PR_INFO("Waiting for PB1(SW1) press\n");
-    TFT_Intro();
-#else
-
     MXC_Delay(SEC(2)); // wait for debugger to connect
-#endif // #ifdef TFT_ENABLE
 
     PR_INFO("\n*** READY ***\n");
 #ifdef WUT_ENABLE
@@ -472,41 +299,14 @@ int main(void)
 
     /* Read samples */
     while (1) {
-#ifndef ENABLE_MIC_PROCESSING
-
-        /* end of test vectors */
-        if (sampleCounter >= sizeof(voiceVector) / sizeof(voiceVector[0])) {
-            PR_DEBUG("End of test Vector\n");
-            break;
-        }
-
-#endif
 
         /* Read from Mic driver to get CHUNK worth of samples, otherwise next sample*/
         if (MicReadChunk(&avg) == 0) {
 #ifdef WUT_ENABLE
-#ifdef ENERGY
-
-            // keep LED on for about 10sec for energy measurement
-            if (tot_usec > 10 * 1000 * 1000) {
-                LED_Off(LED1);
-                tot_usec = -10000000; // wait for 10sec before measuring again
-            } else if (tot_usec > 0) {
-                LED_On(LED1);
-            }
-
 #endif
-#endif
-
-#if SLEEP_MODE == 1
-            __WFI();
-#elif SLEEP_MODE == 2
-#ifdef WUT_ENABLE
             MXC_LP_ClearWakeStatus();
             SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk; // SLEEPDEEP=1
             __WFI();
-#endif
-#endif // #if SLEEP_MODE == 1
             continue;
         }
 
@@ -517,22 +317,6 @@ int main(void)
             continue;
 
 #ifdef ENABLE_SILENCE_DETECTION // disable to start collecting data immediately.
-
-            /* Display average envelope as a bar */
-#ifdef ENABLE_PRINT_ENVELOPE
-        PR_DEBUG("%.6d|", sampleCounter);
-
-        for (int i = 0; i < avg / 10; i++) {
-            PR_DEBUG("=");
-        }
-
-        if (avg >= thresholdHigh) {
-            PR_DEBUG("*");
-        }
-
-        PR_DEBUG("[%d]\n", avg);
-#endif
-
         /* if we have not detected voice, check the average*/
         if (procState == SILENCE) {
             /* compute average, proceed if greater than threshold */
@@ -567,14 +351,8 @@ int main(void)
             /* if this is the last sample and there are not enough samples to
              * feed to CNN, or if it is long silence after keyword,  append with zero (for reading file)
              */
-#ifndef ENABLE_MIC_PROCESSING
 
-            if (((ai85Counter < SAMPLE_SIZE) &&
-                 (sampleCounter >= sizeof(voiceVector) / sizeof(voiceVector[0]) - 1)) ||
-                (avgSilenceCounter > SILENCE_COUNTER_THRESHOLD))
-#else
             if (avgSilenceCounter > SILENCE_COUNTER_THRESHOLD)
-#endif
             {
                 memset(pChunkBuff, 0, CHUNK);
 
@@ -682,31 +460,12 @@ int main(void)
                     PR_DEBUG("ERROR: Starting CNN! \n");
                     fail();
                 }
-
-#if SLEEP_MODE == 0
-
-                /* Wait for CNN  to complete */
-                while (cnn_time == 0) {
-                    __WFI();
-                }
-
-#elif SLEEP_MODE == 1
-
-                while (cnn_time == 0) {
-                    __WFI();
-                }
-
-#elif SLEEP_MODE == 2
                 SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk; // SLEEPDEEP=1
 
                 while (cnn_time == 0) {
-#ifdef WUT_ENABLE
                     MXC_LP_ClearWakeStatus();
                     __WFI();
-#endif
                 }
-
-#endif // #if SLEEP_MODE==0
 
                 /* Read CNN result */
                 cnn_unload((uint32_t *)ml_data);
@@ -739,20 +498,6 @@ int main(void)
 
                 /* run softmax */
                 softmax_q17p14_q15((const q31_t *)ml_data, NUM_OUTPUTS, ml_softmax);
-
-#ifdef ENABLE_CLASSIFICATION_DISPLAY
-                PR_DEBUG("\nClassification results:\n");
-
-                for (int i = 0; i < NUM_OUTPUTS; i++) {
-                    int digs = (1000 * ml_softmax[i] + 0x4000) >> 15;
-                    int tens = digs % 10;
-                    digs = digs / 10;
-
-                    PR_DEBUG("[%+.7d] -> Class %.2d %8s: %d.%d%%\n", ml_data[i], i, keywords[i],
-                             digs, tens);
-                }
-
-#endif
                 /* find detected class with max probability */
                 ret = check_inference(ml_softmax, ml_data, &out_class, &probability);
 
@@ -768,102 +513,6 @@ int main(void)
                 Max = 0;
                 Min = 0;
                 //------------------------------------------------------------
-
-#ifdef DISPLAY_AUDIO
-                uint32_t color;
-                int i, j;
-                char buff[TFT_BUFF_SIZE];
-                double db;
-                int32_t x, y, energy;
-                int32_t lasty;
-                int32_t h0, h1;
-
-                lasty = 140;
-                x = 0;
-                energy = 0;
-
-                color = setColor(255, 255, 0); // yellow
-
-                /* Down sample to display according to the TFT width */
-                for (i = 0; i < SAMPLE_SIZE; i += (SAMPLE_SIZE / 320)) {
-                    y = micBuff[(micBufIndex + i + 30 * CHUNK) % SAMPLE_SIZE]; // offset to align
-
-                    /* Energy of downsampled signal */
-                    energy += y * y;
-
-                    y = 140 - y; // vertical offset on TFT
-
-                    if (lasty < y) {
-                        h0 = lasty;
-                        h1 = y;
-                    } else {
-                        h0 = y;
-                        h1 = lasty;
-                    }
-
-                    /* Draw a line */
-                    for (j = h0; j <= h1; j++) {
-                        MXC_TFT_WritePixel(x, j, 1, 1, color);
-                    }
-                    lasty = y;
-                    x++;
-                }
-
-                memset(buff, 32, TFT_BUFF_SIZE);
-                /* rms */
-                db = 10 * log10((double)energy / 320);
-                TFT_Print(buff, 240, 30, font_2,
-                          snprintf(buff, sizeof(buff), "%0.1fdB", (double)db));
-#endif
-
-#ifdef SEND_MIC_OUT_SDCARD
-                /**
-                 *
-                 *  - Blink Green led if a keyword is detected
-                 *  - Blink Yellow if detection is low confidence or unknown
-                 *  - Solid Red if there is error with SD card interface
-                 *
-                 **/
-                LED_Off(LED_GREEN);
-                if (!ret || out_class == NUM_OUTPUTS - 1) {
-                    // Low Confidence or unknown
-                    LED_On(LED_GREEN);
-                    LED_On(LED_RED);
-                }
-
-                int i = 0;
-                for (i = 0; i < SAMPLE_SIZE; i++) {
-                    // printf("%d\n", micBuff[(micBufIndex + i) % SAMPLE_SIZE]);
-                    snippet[i] = micBuff[(micBufIndex + i) % SAMPLE_SIZE];
-                }
-                if (ret && out_class != NUM_OUTPUTS - 1) {
-                    // Word detected with high confidence
-                    snprintf(fileName, sizeof(fileName), "%04d_%s", fileCount, keywords[out_class]);
-                } else {
-                    // Unknown or Low confidence: add "L" at the end of file name
-                    snprintf(fileName, sizeof(fileName), "%04d_%s_L", fileCount, "Unknown");
-                }
-                if (writeSoundSnippet((char *)fileName, snippetLength, &snippet[0]) != E_NO_ERROR) {
-                    printf("*** !!!SD ERROR!!! ***\n");
-                    LED_Off(LED_GREEN);
-                    LED_On(LED_RED); // Permanent Red Led
-                    while (1) {}
-                }
-                fileCount++;
-                LED_Off(LED_RED);
-                LED_On(LED_GREEN);
-#endif
-
-#ifdef SEND_MIC_OUT_SERIAL
-                printf("START: %d\n", micBufIndex);
-
-                int k = 0;
-                for (k = 0; k < SAMPLE_SIZE; k++)
-                    // printf("%d\n", micBuff[(micBufIndex + k) % SAMPLE_SIZE]);
-                    console_uart_send_byte(micBuff[(micBufIndex + k) % SAMPLE_SIZE]);
-
-                printf("END\n");
-#endif
 
                 /* clear the buffer */
                 memset(micBuff, 0, SAMPLE_SIZE);
@@ -886,34 +535,12 @@ int main(void)
     LED_Off(LED2);
     PR_DEBUG("Total Samples:%d, Total Words: %d \n", sampleCounter, wordCounter);
 
-#ifdef TFT_ENABLE
-    TFT_End(wordCounter);
-#endif
-
     while (1) {}
 }
 
 /* **************************************************************************** */
 
 #ifdef ENABLE_MIC_PROCESSING
-#ifdef ENABLE_CODEC_MIC
-static void codec_init(void)
-{
-    int err;
-    if (MXC_I2C_Init(PMIC_AUDIO_I2C, 1, 0) != E_NO_ERROR)
-        printf("Error initializing I2C controller");
-    else
-        printf("I2C initialized successfully \n");
-
-    MXC_I2C_SetFrequency(PMIC_AUDIO_I2C, CODEC_I2C_FREQ);
-    if ((err = max9867_init(PMIC_AUDIO_I2C, EXT_I2S_FREQ, 1)) != E_NO_ERROR) {
-        PR_DEBUG("\nError in max9867_init: %d\n", err);
-    }
-
-    if (max9867_enable_record(1) != E_NO_ERROR)
-        printf("Error enabling record path");
-}
-#endif
 void I2SInit(void)
 {
     mxc_i2s_req_t req;
@@ -942,9 +569,6 @@ void I2SInit(void)
     req.txData = NULL;
     req.rxData = i2s_rx_buffer;
     req.length = I2S_RX_BUFFER_SIZE;
-#ifdef ENABLE_CODEC_MIC
-    req.channelMode = MXC_I2S_EXTERNAL_SCK_EXTERNAL_WS;
-#endif
     if ((err = MXC_I2S_Init(&req)) != E_NO_ERROR) {
         PR_DEBUG("\nError in I2S_Init: %d\n", err);
 
@@ -954,13 +578,6 @@ void I2SInit(void)
     /* Set I2S RX FIFO threshold to generate interrupt */
     MXC_I2S_SetRXThreshold(4);
 
-#ifndef WUT_ENABLE
-    MXC_NVIC_SetVector(I2S_IRQn, i2s_isr);
-    NVIC_EnableIRQ(I2S_IRQn);
-    /* Enable RX FIFO Threshold Interrupt */
-    MXC_I2S_EnableInt(MXC_F_I2S_INTEN_RX_THD_CH0);
-#endif
-
     MXC_I2S_RXEnable();
     __enable_irq();
 }
@@ -969,9 +586,6 @@ void I2SInit(void)
 /* **************************************************************************** */
 uint8_t check_inference(q15_t *ml_soft, int32_t *ml_data, int16_t *out_class, double *out_prob)
 {
-#ifdef TFT_ENABLE
-    char buff[TFT_BUFF_SIZE];
-#endif
     int32_t temp[NUM_OUTPUTS];
     q15_t max = 0; // soft_max output is 0->32767
     int32_t max_ml = 1 << 31; // ml before going to soft_max
@@ -994,38 +608,8 @@ uint8_t check_inference(q15_t *ml_soft, int32_t *ml_data, int16_t *out_class, do
         if (top == 0) {
             *out_class = max_index;
             *out_prob = 100.0 * max / 32768.0;
-#ifndef TFT_ENABLE
             break;
         }
-
-#else
-            MXC_TFT_ClearScreen();
-            memset(buff, 32, TFT_BUFF_SIZE);
-            if (max_index == NUM_OUTPUTS - 1 || *out_prob <= INFERENCE_THRESHOLD)
-                TFT_Print(buff, 20, 30, font_2, snprintf(buff, sizeof(buff), "Unknown"));
-            else
-                TFT_Print(buff, 20, 30, font_2,
-                          snprintf(buff, sizeof(buff), "%s (%0.1f%%)", keywords[max_index],
-                                   (double)100.0 * max / 32768.0));
-            //TFT_Print(buff, 1, 80, font_1, snprintf(buff, sizeof(buff), "Top classes:"));
-        } else {
-            /* uncomment to show the next 4 top classes */
-            //TFT_Print(buff, 20, 80 + 20 * top, font_1,
-            //          snprintf(buff, sizeof(buff), "%s (%0.1f%%)", keywords[max_index],
-            //                   (double)100.0 * max / 32768.0));
-        }
-
-        /* reset for next top */
-        temp[max_index] = 1 << 31;
-        max_ml = 1 << 31;
-        max_index = -1;
-
-        if (top == 4) {
-            TFT_Print(buff, 20, 215, font_1,
-                      snprintf(buff, sizeof(buff), "Sample Min: %d    Max: %d", Min, Max));
-        }
-
-#endif
     }
 
     PR_DEBUG("Min: %d,   Max: %d \n", Min, Max);
@@ -1154,19 +738,6 @@ uint8_t AddTranspose(uint8_t *pIn, uint8_t *pOut, uint16_t inSize, uint16_t outS
     }
 }
 /* **************************************************************************** */
-#ifndef ENABLE_MIC_PROCESSING
-int8_t MicReader(int32_t *sample)
-{
-    static uint32_t micSampleCount = 0;
-    int16_t temp;
-
-    /* reads from Test Vector file and return one sample */
-    temp = voiceVector[(micSampleCount++) % KWS20_TEST_VECTOR_SIZE];
-    *sample = temp;
-    return (1);
-}
-#endif
-/* **************************************************************************** */
 uint8_t MicReadChunk(uint16_t *avg)
 {
     static uint16_t chunkCount = 0;
@@ -1174,10 +745,6 @@ uint8_t MicReadChunk(uint16_t *avg)
     int32_t sample = 0;
     int16_t temp = 0;
     uint32_t rx_size = 0;
-
-#ifndef ENABLE_MIC_PROCESSING
-    rx_size = 16;
-#else
     static uint32_t index = 0;
     /* sample not ready */
     if (!i2s_flag) {
@@ -1190,14 +757,8 @@ uint8_t MicReadChunk(uint16_t *avg)
     /* Read number of samples in I2S RX FIFO */
     rx_size = MXC_I2S->dmach0 >> MXC_F_I2S_DMACH0_RX_LVL_POS;
     //  PR_DEBUG("%d ", rx_size);
-#endif
     /* read until fifo is empty or enough samples are collected */
     while ((rx_size--) && (chunkCount < CHUNK)) {
-#ifndef ENABLE_MIC_PROCESSING
-        /* Read one sample from mic emulated by test vector and add to buffer*/
-        MicReader(&sample);
-        temp = sample;
-#else
         /* Read microphone sample from I2S FIFO */
         sample = (int32_t)MXC_I2S->fifoch0;
 
@@ -1211,7 +772,6 @@ uint8_t MicReadChunk(uint16_t *avg)
         if (index++ < 10000) {
             continue;
         }
-#endif
 
 #ifndef ENERGY
         /* Turn on LED2 (Red) */
@@ -1301,54 +861,3 @@ int16_t HPF(int16_t input)
 
     return (output);
 }
-
-/************************************************************************************/
-#ifdef TFT_ENABLE
-void TFT_Intro(void)
-{
-    char buff[TFT_BUFF_SIZE];
-    memset(buff, 32, TFT_BUFF_SIZE);
-    TFT_Print(buff, 55, 10, font_2, snprintf(buff, sizeof(buff), "ANALOG DEVICES"));
-    TFT_Print(buff, 35, 40, font_1, snprintf(buff, sizeof(buff), "Keyword Spotting Demo"));
-    TFT_Print(buff, 65, 70, font_1, snprintf(buff, sizeof(buff), "Ver. %s", VERSION));
-    TFT_Print(buff, 5, 110, font_1, snprintf(buff, sizeof(buff), "Following keywords can be"));
-    TFT_Print(buff, 5, 135, font_1, snprintf(buff, sizeof(buff), "detected:"));
-    TFT_Print(buff, 35, 160, font_1, snprintf(buff, sizeof(buff), "0...9, up, down, left, right"));
-    TFT_Print(buff, 35, 185, font_1, snprintf(buff, sizeof(buff), "stop, go, yes, no, on, off"));
-    TFT_Print(buff, 20, 210, font_2, snprintf(buff, sizeof(buff), "PRESS PB1(SW1) TO START!"));
-
-    while (!PB_Get(0)) {}
-
-    MXC_TFT_ClearScreen();
-#ifdef BOARD_EVKIT_V1
-    TFT_Print(buff, 20, 20, font_1, snprintf(buff, sizeof(buff), "Wait for RED LED to turn on"));
-    TFT_Print(buff, 20, 50, font_1, snprintf(buff, sizeof(buff), "and start saying keywords..."));
-    TFT_Print(buff, 20, 110, font_1, snprintf(buff, sizeof(buff), "If RED LED didn't turn on in"));
-    TFT_Print(buff, 20, 140, font_1, snprintf(buff, sizeof(buff), "2 sec, disconnect SWD and"));
-    TFT_Print(buff, 20, 170, font_1, snprintf(buff, sizeof(buff), "power cycle."));
-#else
-    TFT_Print(buff, 20, 50, font_1, snprintf(buff, sizeof(buff), "Start saying keywords..."));
-#endif
-}
-
-/***************************************************************************** */
-void TFT_Print(char *str, int x, int y, int font, int length)
-{
-    // fonts id
-    text_t text;
-    text.data = str;
-    text.len = length;
-    MXC_TFT_PrintFont(x, y, font, &text, NULL);
-}
-
-/***************************************************************************** */
-void TFT_End(uint16_t words)
-{
-    char buff[TFT_BUFF_SIZE];
-    memset(buff, 32, TFT_BUFF_SIZE);
-    MXC_TFT_ClearScreen();
-    TFT_Print(buff, 70, 30, font_2, snprintf(buff, sizeof(buff), "Demo Stopped!"));
-    TFT_Print(buff, 10, 60, font_1, snprintf(buff, sizeof(buff), "Number of words: %d ", words));
-    TFT_Print(buff, 0, 180, font_1, snprintf(buff, sizeof(buff), "PRESS RESET TO TRY AGAIN!"));
-}
-#endif
