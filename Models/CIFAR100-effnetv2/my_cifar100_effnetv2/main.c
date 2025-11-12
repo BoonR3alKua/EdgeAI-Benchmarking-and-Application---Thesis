@@ -1,5 +1,11 @@
 /*******************************************************************************
 * Modified main.c to receive CIFAR-100 images via UART and perform inference
+* 
+* IMPORTANT NOTES:
+* 1. Verify CNN input memory address (0x51018000) matches your CNN configuration
+* 2. softmax_q17p14_q15 function must be available (check softmax.c/h)
+* 3. Ensure UART0 is properly connected to sender on COM5
+* 4. Baud rate: 115200
 *******************************************************************************/
 
 #include <stdlib.h>
@@ -11,6 +17,9 @@
 #include "uart.h"
 #include "dma.h"
 #include "led.h"
+
+// Softmax function prototype (should be in softmax.h if it exists)
+extern void softmax_q17p14_q15(const q31_t *vec_in, const uint16_t dim_vec, q15_t *p_out);
 
 // UART Configuration
 #define UART_BAUD 115200
@@ -72,6 +81,14 @@ int receive_image_uart(uint32_t *image_idx, uint8_t *label)
                 break;
                 
             case 2:  // Reading packet data
+                // Check for buffer overflow before writing
+                if (bytes_received >= sizeof(rx_buffer)) {
+                    printf("Error: Buffer overflow, resetting\n");
+                    state = 0;
+                    bytes_received = 0;
+                    break;
+                }
+                
                 rx_buffer[bytes_received++] = byte;
                 
                 // Check if we've received all data (4 bytes idx + 1 byte label + 3072 bytes image + 2 bytes end marker)
@@ -105,11 +122,34 @@ int receive_image_uart(uint32_t *image_idx, uint8_t *label)
 
 /**
  * Load input data from received buffer into CNN
+ * CIFAR-100: 3 channels, 32x32 HWC format
+ * Total: 3072 bytes (32x32x3)
+ * 
+ * For HWC format with 3 channels, data needs to be loaded to CNN input memory.
+ * Based on MAX78000 architecture, input is typically at 0x51018000 for streaming,
+ * but may need distribution across memory banks depending on CNN configuration.
+ * 
+ * TODO: Verify this matches the CNN configuration in cnn.c
  */
 void load_input_from_buffer(void)
 {
-    // Copy data to CNN input memory (0x51018000)
+    // For CIFAR-100 with 3 input channels (RGB), 32x32 image
+    // Input format is HWC (Height, Width, Channel)
+    // Based on typical MAX78000 configuration for small RGB images:
+    
+    // Option 1: Single memory write (if CNN configured for streaming input)
     memcpy32((uint32_t *)0x51018000, input_data, BYTES_PER_IMAGE / 4);
+    
+    // Option 2: If multi-bank distribution is needed (uncomment if Option 1 doesn't work)
+    // This would split the data across memory banks similar to KWS20
+    // You may need to adjust addresses based on ai8xize.py output
+    /*
+    int words_per_bank = (BYTES_PER_IMAGE / 4) / 4;  // Assuming 4 memory banks
+    memcpy32((uint32_t *)0x50400000, &input_data[0 * words_per_bank], words_per_bank);
+    memcpy32((uint32_t *)0x50408000, &input_data[1 * words_per_bank], words_per_bank);
+    memcpy32((uint32_t *)0x50410000, &input_data[2 * words_per_bank], words_per_bank);
+    memcpy32((uint32_t *)0x50418000, &input_data[3 * words_per_bank], words_per_bank);
+    */
 }
 
 /**
@@ -120,6 +160,7 @@ int classify_image(void)
     int i, max_idx = 0;
     int32_t max_val = ml_data[0];
     
+    cnn_time = 0;  // Reset timer before starting CNN
     cnn_start();
     
     while (cnn_time == 0)
