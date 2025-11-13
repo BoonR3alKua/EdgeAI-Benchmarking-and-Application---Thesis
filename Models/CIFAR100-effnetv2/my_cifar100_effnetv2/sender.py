@@ -4,6 +4,7 @@ Sends images from CIFAR-100 dataset to MAX78000 device via UART COM5
 """
 
 import serial
+import serial.tools.list_ports
 import numpy as np
 import tensorflow as tf
 import time
@@ -11,7 +12,7 @@ import struct
 from tqdm import tqdm
 
 # UART Configuration
-SERIAL_PORT = 'COM5'
+SERIAL_PORT = 'COM5'  # Default, will auto-detect if this fails
 BAUD_RATE = 115200
 TIMEOUT = 5  # seconds
 
@@ -19,7 +20,7 @@ TIMEOUT = 5  # seconds
 IMAGE_SIZE = 32
 NUM_CHANNELS = 3
 BYTES_PER_IMAGE = IMAGE_SIZE * IMAGE_SIZE * NUM_CHANNELS  # 3072 bytes
-NUM_IMAGES = 1000
+NUM_IMAGES = 100  # Start with 100 images to test quickly
 
 # Protocol Configuration
 START_MARKER = b'\xFF\xAA'  # Start of transmission marker
@@ -95,8 +96,14 @@ def send_image_via_uart(ser, image_data, image_idx, label):
         # Send packet
         bytes_sent = ser.write(packet)
         
-        # Wait for acknowledgment from device (optional)
-        # You can add ACK/NACK protocol here if needed
+        # Try to read response from device (non-blocking)
+        time.sleep(0.05)  # Give device time to process
+        if ser.in_waiting > 0:
+            response = ser.read(ser.in_waiting)
+            try:
+                print(f"\n[Device]: {response.decode('utf-8', errors='ignore')}", end='')
+            except:
+                pass
         
         return bytes_sent == len(packet)
         
@@ -116,11 +123,23 @@ def send_cifar100_images():
     # Load images
     images, labels = load_cifar100_images(NUM_IMAGES)
     
-    # Open serial port
+    # Auto-detect COM port if default fails
+    available_ports = []
+    for port in serial.tools.list_ports.comports():
+        available_ports.append(f"{port.device}: {port.description}")
+    
+    print("\nAvailable COM ports:")
+    for port_info in available_ports:
+        print(f"  - {port_info}")
+    
+    # Try to open serial port
+    port_to_use = SERIAL_PORT
+    ser = None
+    
     try:
-        print(f"\nOpening serial port {SERIAL_PORT} at {BAUD_RATE} baud...")
+        print(f"\nTrying to open serial port {port_to_use} at {BAUD_RATE} baud...")
         ser = serial.Serial(
-            port=SERIAL_PORT,
+            port=port_to_use,
             baudrate=BAUD_RATE,
             bytesize=serial.EIGHTBITS,
             parity=serial.PARITY_NONE,
@@ -128,67 +147,92 @@ def send_cifar100_images():
             timeout=TIMEOUT,
             write_timeout=TIMEOUT
         )
-        
-        print(f"Serial port opened successfully")
-        print(f"Port: {ser.name}")
-        print(f"Baud rate: {ser.baudrate}")
-        
-        # Wait for device to be ready
-        time.sleep(2)
-        
-        # Clear any existing data in buffers
-        ser.reset_input_buffer()
-        ser.reset_output_buffer()
-        
-        # Send images
-        print(f"\nSending {NUM_IMAGES} images...")
-        success_count = 0
-        fail_count = 0
-        
-        start_time = time.time()
-        
-        for idx in tqdm(range(NUM_IMAGES), desc="Sending images"):
-            # Preprocess image
-            image_data = preprocess_image_for_cnn(images[idx])
-            
-            # Send image
-            if send_image_via_uart(ser, image_data, idx, labels[idx]):
-                success_count += 1
-            else:
-                fail_count += 1
-                print(f"\nFailed to send image {idx}")
-            
-            # Small delay between images to prevent buffer overflow
-            time.sleep(0.01)  # 10ms delay
-        
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        
-        # Statistics
-        print("\n" + "="*60)
-        print("Transmission Complete")
-        print("="*60)
-        print(f"Total images sent: {success_count}/{NUM_IMAGES}")
-        print(f"Failed transmissions: {fail_count}")
-        print(f"Total time: {elapsed_time:.2f} seconds")
-        print(f"Average time per image: {elapsed_time/NUM_IMAGES*1000:.2f} ms")
-        print(f"Throughput: {NUM_IMAGES/elapsed_time:.2f} images/second")
-        print(f"Data rate: {(BYTES_PER_IMAGE*NUM_IMAGES)/(elapsed_time*1024):.2f} KB/s")
-        
-        # Close serial port
-        ser.close()
-        print("\nSerial port closed")
-        
     except serial.SerialException as e:
-        print(f"\nSerial port error: {e}")
-        print("Please check:")
-        print("1. Device is connected to COM5")
-        print("2. No other program is using COM5")
-        print("3. Correct drivers are installed")
+        print(f"\n❌ Error opening {port_to_use}: {e}")
+        
+        # Try to auto-detect MAX78000
+        print("\nAttempting to auto-detect MAX78000...")
+        for port in serial.tools.list_ports.comports():
+            if "USB Serial" in port.description or "MAXIM" in port.description.upper() or "MAX78000" in port.description.upper():
+                try:
+                    print(f"  Trying {port.device}...")
+                    ser = serial.Serial(
+                        port=port.device,
+                        baudrate=BAUD_RATE,
+                        bytesize=serial.EIGHTBITS,
+                        parity=serial.PARITY_NONE,
+                        stopbits=serial.STOPBITS_ONE,
+                        timeout=TIMEOUT,
+                        write_timeout=TIMEOUT
+                    )
+                    port_to_use = port.device
+                    print(f"  ✓ Successfully opened {port.device}")
+                    break
+                except:
+                    continue
+        
+        if ser is None:
+            print("\n❌ Could not open any COM port!")
+            print("Please check:")
+            print("1. Device is connected via USB")
+            print("2. Close any serial monitors (PuTTY, TeraTerm, VS Code Serial Monitor)")
+            print("3. Drivers are installed correctly")
+            print("4. Try unplugging and replugging the device")
+            return False
+    
+    if ser is None:
         return False
-    except Exception as e:
-        print(f"\nUnexpected error: {e}")
-        return False
+    
+    # Successfully opened port
+    print(f"Serial port opened successfully")
+    print(f"Port: {ser.name}")
+    print(f"Baud rate: {ser.baudrate}")
+    
+    # Wait for device to be ready
+    time.sleep(2)
+    
+    # Clear any existing data in buffers
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
+    
+    # Send images
+    print(f"\nSending {NUM_IMAGES} images...")
+    success_count = 0
+    fail_count = 0
+    
+    start_time = time.time()
+    
+    for idx in tqdm(range(NUM_IMAGES), desc="Sending images"):
+        # Preprocess image
+        image_data = preprocess_image_for_cnn(images[idx])
+        
+        # Send image
+        if send_image_via_uart(ser, image_data, idx, labels[idx]):
+            success_count += 1
+        else:
+            fail_count += 1
+            print(f"\nFailed to send image {idx}")
+        
+        # Small delay between images to prevent buffer overflow
+        time.sleep(0.01)  # 10ms delay
+    
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    # Statistics
+    print("\n" + "="*60)
+    print("Transmission Complete")
+    print("="*60)
+    print(f"Total images sent: {success_count}/{NUM_IMAGES}")
+    print(f"Failed transmissions: {fail_count}")
+    print(f"Total time: {elapsed_time:.2f} seconds")
+    print(f"Average time per image: {elapsed_time/NUM_IMAGES*1000:.2f} ms")
+    print(f"Throughput: {NUM_IMAGES/elapsed_time:.2f} images/second")
+    print(f"Data rate: {(BYTES_PER_IMAGE*NUM_IMAGES)/(elapsed_time*1024):.2f} KB/s")
+    
+    # Close serial port
+    ser.close()
+    print("\nSerial port closed")
     
     return True
 

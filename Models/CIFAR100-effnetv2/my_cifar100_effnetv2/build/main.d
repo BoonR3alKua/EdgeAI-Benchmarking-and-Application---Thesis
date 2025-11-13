@@ -114,4 +114,5 @@ D:/Thesis/Models/CIFAR100-effnetv2/my_cifar100_effnetv2/build/main.o: \
  D:/MaximSDK/Libraries/CMSIS/Device/Maxim/MAX78000/Include/wdt_regs.h \
  D:/MaximSDK/Libraries/PeriphDrivers/Include/MAX78000/wut.h \
  D:/MaximSDK/Libraries/CMSIS/Device/Maxim/MAX78000/Include/wut_regs.h \
- cnn.h sampledata.h sampleoutput.h
+ cnn.h D:/MaximSDK/Libraries/PeriphDrivers/Include/MAX78000/uart.h \
+ D:/MaximSDK/Libraries/PeriphDrivers/Include/MAX78000/dma.h

@@ -23,7 +23,7 @@ extern void softmax_q17p14_q15(const q31_t *vec_in, const uint16_t dim_vec, q15_
 
 // UART Configuration
 #define UART_BAUD 115200
-#define RX_UART MXC_UART0  // Console UART
+#define RX_UART MXC_UART0  // Console UART (COM5) - used for both data and console
 
 // Image Configuration
 #define IMAGE_SIZE 32
@@ -52,6 +52,7 @@ volatile uint32_t cnn_time;
 int receive_image_uart(uint32_t *image_idx, uint8_t *label)
 {
     int bytes_received = 0;
+    int byte_read;
     uint8_t byte;
     int state = 0;  // 0: waiting for start, 1: reading data, 2: verifying end
     
@@ -60,9 +61,11 @@ int receive_image_uart(uint32_t *image_idx, uint8_t *label)
     // State machine to receive packet
     while (1) {
         // Read one byte
-        if (MXC_UART_ReadCharacter(RX_UART, &byte) != E_NO_ERROR) {
-            continue;
+        byte_read = MXC_UART_ReadCharacter(RX_UART);
+        if (byte_read < 0) {
+            continue;  // No data available or error
         }
+        byte = (uint8_t)byte_read;
         
         switch (state) {
             case 0:  // Waiting for start marker
@@ -137,19 +140,16 @@ void load_input_from_buffer(void)
     // Input format is HWC (Height, Width, Channel)
     // Based on typical MAX78000 configuration for small RGB images:
     
-    // Option 1: Single memory write (if CNN configured for streaming input)
-    memcpy32((uint32_t *)0x51018000, input_data, BYTES_PER_IMAGE / 4);
+    // Option 1: Single memory write - NOT WORKING! (0.80% accuracy)
+    memcpy32((uint32_t *)0x50400000, input_data, 1024);  // Load all 3072 bytes as 1024 words
     
-    // Option 2: If multi-bank distribution is needed (uncomment if Option 1 doesn't work)
-    // This would split the data across memory banks similar to KWS20
-    // You may need to adjust addresses based on ai8xize.py output
-    /*
-    int words_per_bank = (BYTES_PER_IMAGE / 4) / 4;  // Assuming 4 memory banks
-    memcpy32((uint32_t *)0x50400000, &input_data[0 * words_per_bank], words_per_bank);
-    memcpy32((uint32_t *)0x50408000, &input_data[1 * words_per_bank], words_per_bank);
-    memcpy32((uint32_t *)0x50410000, &input_data[2 * words_per_bank], words_per_bank);
-    memcpy32((uint32_t *)0x50418000, &input_data[3 * words_per_bank], words_per_bank);
-    */
+    // Option 2: Multi-bank distribution (TRYING THIS NOW)
+    // Split the data across memory banks similar to KWS20
+    // int words_per_bank = (BYTES_PER_IMAGE / 4) / 4;  // 768 / 4 = 192 words per bank
+    // memcpy32((uint32_t *)0x50400000, &input_data[0 * words_per_bank], words_per_bank);
+    // memcpy32((uint32_t *)0x50408000, &input_data[1 * words_per_bank], words_per_bank);
+    // memcpy32((uint32_t *)0x50410000, &input_data[2 * words_per_bank], words_per_bank);
+    // memcpy32((uint32_t *)0x50418000, &input_data[3 * words_per_bank], words_per_bank);
 }
 
 /**
@@ -181,6 +181,18 @@ int classify_image(void)
     return max_idx;
 }
 
+/**
+ * Get confidence percentage for a given class
+ */
+float get_confidence(int class_idx)
+{
+    // Convert q15 softmax value to percentage
+    // q15 format: value / 32768 gives the probability
+    // Multiply by 100 to get percentage
+    int digs = (1000 * ml_softmax[class_idx] + 0x4000) >> 15;
+    return digs / 10.0f;
+}
+
 int main(void)
 {
     int error;
@@ -189,15 +201,19 @@ int main(void)
     int predicted_class;
     int correct_count = 0;
     int total_count = 0;
+    float total_confidence = 0.0f;
+    float avg_confidence = 0.0f;
     
     MXC_ICC_Enable(MXC_ICC0);
     MXC_SYS_Clock_Select(MXC_SYS_CLOCK_IPO);
     SystemCoreClockUpdate();
     
-    printf("\n*** CIFAR-100 CNN Inference via UART ***\n");
-    printf("Waiting for images on UART0 at %d baud\n\n", UART_BAUD);
+    printf("\n*** CIFAR-100 CNN Inference via UART (EfficientNetV2) ***\n");
+    printf("Ready to receive images on UART0 at %d baud\n", UART_BAUD);
+    printf("NOTE: Close this console before running sender.py\n");
+    printf("      Results will be visible after sender completes.\n\n");
     
-    // Initialize UART
+    // Initialize UART for data reception
     error = MXC_UART_Init(RX_UART, UART_BAUD, MXC_UART_APB_CLK);
     if (error < E_NO_ERROR) {
         printf("Error initializing UART: %d\n", error);
@@ -231,20 +247,27 @@ int main(void)
         predicted_class = classify_image();
         LED_Off(1);
         
+        // Get confidence for predicted class
+        float confidence = get_confidence(predicted_class);
+        
         // Check accuracy
         total_count++;
+        total_confidence += confidence;
+        avg_confidence = total_confidence / total_count;
+        
         if (predicted_class == ground_truth_label) {
             correct_count++;
         }
         
-        // Print results
-        printf("Image %lu: Predicted=%d, Actual=%d, %s\n",
-               image_idx, predicted_class, ground_truth_label,
+        // Print results with confidence
+        printf("Image %lu: Predicted=%d (%.2f%%), Actual=%d, %s\n",
+               image_idx, predicted_class, confidence, ground_truth_label,
                (predicted_class == ground_truth_label) ? "CORRECT" : "WRONG");
         
-        printf("Accuracy: %d/%d (%.2f%%)\n\n",
+        printf("Accuracy: %d/%d (%.2f%%), Avg Confidence: %.2f%%\n\n",
                correct_count, total_count,
-               (float)correct_count / total_count * 100.0f);
+               (double)correct_count / total_count * 100.0,
+               avg_confidence);
         
         // Reconfigure CNN for next inference
         cnn_init();
