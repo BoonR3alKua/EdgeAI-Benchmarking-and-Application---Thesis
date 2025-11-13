@@ -137,8 +137,6 @@ void WUT_IRQHandler(void)
     MXC_WUT_IntClear();
 
     tot_usec += WUT_USEC;
-    //LED_On(LED2);
-    //LED_Off(LED2);
 }
 #endif
 

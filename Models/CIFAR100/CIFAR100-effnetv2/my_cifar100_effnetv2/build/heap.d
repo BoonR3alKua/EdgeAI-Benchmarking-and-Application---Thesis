@@ -1,0 +1,34 @@
+D:/Thesis/Models/CIFAR100-effnetv2/my_cifar100_effnetv2/build/heap.o: \
+ D:/MaximSDK/Libraries/CMSIS/Device/Maxim/MAX78000/Source/heap.c \
+ d:\maximsdk\tools\gnutools\10.3\lib\gcc\arm-none-eabi\10.3.1\include\stdint.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\stdint.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\machine\_default_types.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\features.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\_newlib_version.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\_intsup.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\_stdint.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\errno.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\errno.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\reent.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\_ansi.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\newlib.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\config.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\machine\ieeefp.h \
+ d:\maximsdk\tools\gnutools\10.3\lib\gcc\arm-none-eabi\10.3.1\include\stddef.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\_types.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\machine\_types.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\lock.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\unistd.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\unistd.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\cdefs.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\types.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\machine\endian.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\machine\_endian.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\select.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\_sigset.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\_timeval.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\timespec.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\_timespec.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\_pthreadtypes.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\sched.h \
+ d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\machine\types.h
