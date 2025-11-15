@@ -1,4 +1,4 @@
-D:/Thesis/Models/CIFAR100-mobilenetv2/my_cifar100_mobilenetv2/build/main.o: \
+D:/Thesis/Models/CIFAR100/CIFAR100-mobilenetv2/my_cifar100_mobilenetv2/build/main.o: \
  main.c d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\stdlib.h \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\machine\ieeefp.h \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\_ansi.h \
@@ -114,4 +114,5 @@ D:/Thesis/Models/CIFAR100-mobilenetv2/my_cifar100_mobilenetv2/build/main.o: \
  D:/MaximSDK/Libraries/CMSIS/Device/Maxim/MAX78000/Include/wdt_regs.h \
  D:/MaximSDK/Libraries/PeriphDrivers/Include/MAX78000/wut.h \
  D:/MaximSDK/Libraries/CMSIS/Device/Maxim/MAX78000/Include/wut_regs.h \
- cnn.h sampledata.h sampleoutput.h
+ cnn.h D:/MaximSDK/Libraries/PeriphDrivers/Include/MAX78000/uart.h \
+ D:/MaximSDK/Libraries/PeriphDrivers/Include/MAX78000/dma.h

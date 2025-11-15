@@ -1,4 +1,4 @@
-D:/Thesis/Models/CIFAR100-mobilenetv2/my_cifar100_mobilenetv2/build/cnn.o: \
+D:/Thesis/Models/CIFAR100/CIFAR100-mobilenetv2/my_cifar100_mobilenetv2/build/cnn.o: \
  cnn.c d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\stdlib.h \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\machine\ieeefp.h \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\_ansi.h \

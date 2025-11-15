@@ -1,4 +1,4 @@
-D:/Thesis/Models/CIFAR100-mobilenetv2/my_cifar100_mobilenetv2/build/tft_ili9341.o: \
+D:/Thesis/Models/CIFAR100/CIFAR100-mobilenetv2/my_cifar100_mobilenetv2/build/tft_ili9341.o: \
  D:/MaximSDK/Libraries/MiscDrivers/Display/tft_ili9341.c \
  d:\maximsdk\tools\gnutools\10.3\lib\gcc\arm-none-eabi\10.3.1\include\stddef.h \
  d:\maximsdk\tools\gnutools\10.3\lib\gcc\arm-none-eabi\10.3.1\include\stdint.h \
