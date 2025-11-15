@@ -1,4 +1,4 @@
-D:/Thesis/Models/CIFAR100-mobilenetv2/my_cifar100_mobilenetv2/build/ov7692.o: \
+D:/Thesis/Models/CIFAR100/CIFAR100-mobilenetv2/my_cifar100_mobilenetv2/build/ov7692.o: \
  D:/MaximSDK/Libraries/MiscDrivers/Camera/ov7692.c \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\stdio.h \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\_ansi.h \

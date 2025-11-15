@@ -1,4 +1,4 @@
-D:/Thesis/Models/CIFAR100-mobilenetv2/my_cifar100_mobilenetv2/build/led.o: \
+D:/Thesis/Models/CIFAR100/CIFAR100-mobilenetv2/my_cifar100_mobilenetv2/build/led.o: \
  D:/MaximSDK/Libraries/MiscDrivers/LED/led.c \
  D:/MaximSDK/Libraries/Boards/MAX78000/FTHR_RevA/Include/board.h \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\stdio.h \

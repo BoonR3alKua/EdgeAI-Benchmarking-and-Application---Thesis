@@ -2,7 +2,6 @@
 CIFAR-100 Image Sender via UART
 Sends images from CIFAR-100 dataset to MAX78000 device via UART COM5
 """
-
 import serial
 import serial.tools.list_ports
 import numpy as np
@@ -12,7 +11,7 @@ import struct
 from tqdm import tqdm
 
 # UART Configuration
-SERIAL_PORT = 'COM5'  # Default, will auto-detect if this fails
+SERIAL_PORT = 'COM6'  # Default, will auto-detect if this fails
 BAUD_RATE = 115200
 TIMEOUT = 5  # seconds
 
