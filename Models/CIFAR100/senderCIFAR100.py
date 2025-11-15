@@ -10,26 +10,35 @@ import tensorflow as tf
 import time
 import struct
 from tqdm import tqdm
+import argparse
 
-# UART Configuration
-SERIAL_PORT = 'COM5'  # Default, will auto-detect if this fails
-BAUD_RATE = 115200
-TIMEOUT = 5  # seconds
+# ============================================================================
+# CONFIGURATION - Change these values as needed
+# ============================================================================
+SERIAL_PORT = 'COM5'        # Default COM port, will auto-detect if this fails
+BAUD_RATE = 115200          # Baud rate for serial communication
+TIMEOUT = 5                 # Serial timeout in seconds
+NUM_IMAGES = 100            # Number of images to send
+USE_TEST_SET = True         # True = test set, False = training set
+# ============================================================================
 
-# Image Configuration
+# Image Configuration (CIFAR-100 standard)
 IMAGE_SIZE = 32
 NUM_CHANNELS = 3
 BYTES_PER_IMAGE = IMAGE_SIZE * IMAGE_SIZE * NUM_CHANNELS  # 3072 bytes
-NUM_IMAGES = 100  # Start with 100 images to test quickly
 
 # Protocol Configuration
 START_MARKER = b'\xFF\xAA'  # Start of transmission marker
 END_MARKER = b'\xBB\xFF'    # End of transmission marker
 
 
-def load_cifar100_images(num_images=1000):
+def load_cifar100_images(num_images=1000, use_test_set=True):
     """
     Load CIFAR-100 images from TensorFlow datasets
+    
+    Args:
+        num_images: number of images to load
+        use_test_set: if True, use test set; otherwise use training set
     
     Returns:
         images: numpy array of shape (num_images, 32, 32, 3)
@@ -40,9 +49,15 @@ def load_cifar100_images(num_images=1000):
     # Load CIFAR-100 dataset
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar100.load_data()
     
-    # Use test set images (or you can use x_train if preferred)
-    images = x_test[:num_images]
-    labels = y_test[:num_images].flatten()
+    # Use test set or training set
+    if use_test_set:
+        images = x_test[:num_images]
+        labels = y_test[:num_images].flatten()
+        print(f"Using test set")
+    else:
+        images = x_train[:num_images]
+        labels = y_train[:num_images].flatten()
+        print(f"Using training set")
     
     print(f"Loaded {len(images)} images with shape {images.shape}")
     return images, labels
@@ -112,16 +127,29 @@ def send_image_via_uart(ser, image_data, image_idx, label):
         return False
 
 
-def send_cifar100_images():
+def send_cifar100_images(num_images=NUM_IMAGES, use_test_set=USE_TEST_SET,
+                        serial_port=SERIAL_PORT, baudrate=BAUD_RATE, timeout=TIMEOUT):
     """
     Main function to send CIFAR-100 images via UART
+    
+    Args:
+        num_images: number of images to send
+        use_test_set: if True, use test set; otherwise use training set
+        serial_port: COM port to use
+        baudrate: baud rate for serial communication
+        timeout: timeout in seconds
     """
     print("="*60)
     print("CIFAR-100 to MAX78000 UART Sender")
     print("="*60)
+    print(f"Configuration:")
+    print(f"  - Number of images: {num_images}")
+    print(f"  - Dataset: {'Test' if use_test_set else 'Training'} set")
+    print(f"  - Serial port: {serial_port}")
+    print(f"  - Baud rate: {baudrate}")
     
     # Load images
-    images, labels = load_cifar100_images(NUM_IMAGES)
+    images, labels = load_cifar100_images(num_images, use_test_set)
     
     # Auto-detect COM port if default fails
     available_ports = []
@@ -133,19 +161,19 @@ def send_cifar100_images():
         print(f"  - {port_info}")
     
     # Try to open serial port
-    port_to_use = SERIAL_PORT
+    port_to_use = serial_port
     ser = None
     
     try:
-        print(f"\nTrying to open serial port {port_to_use} at {BAUD_RATE} baud...")
+        print(f"\nTrying to open serial port {port_to_use} at {baudrate} baud...")
         ser = serial.Serial(
             port=port_to_use,
-            baudrate=BAUD_RATE,
+            baudrate=baudrate,
             bytesize=serial.EIGHTBITS,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
-            timeout=TIMEOUT,
-            write_timeout=TIMEOUT
+            timeout=timeout,
+            write_timeout=timeout
         )
     except serial.SerialException as e:
         print(f"\n❌ Error opening {port_to_use}: {e}")
@@ -158,12 +186,12 @@ def send_cifar100_images():
                     print(f"  Trying {port.device}...")
                     ser = serial.Serial(
                         port=port.device,
-                        baudrate=BAUD_RATE,
+                        baudrate=baudrate,
                         bytesize=serial.EIGHTBITS,
                         parity=serial.PARITY_NONE,
                         stopbits=serial.STOPBITS_ONE,
-                        timeout=TIMEOUT,
-                        write_timeout=TIMEOUT
+                        timeout=timeout,
+                        write_timeout=timeout
                     )
                     port_to_use = port.device
                     print(f"  ✓ Successfully opened {port.device}")
@@ -196,13 +224,13 @@ def send_cifar100_images():
     ser.reset_output_buffer()
     
     # Send images
-    print(f"\nSending {NUM_IMAGES} images...")
+    print(f"\nSending {num_images} images...")
     success_count = 0
     fail_count = 0
     
     start_time = time.time()
     
-    for idx in tqdm(range(NUM_IMAGES), desc="Sending images"):
+    for idx in tqdm(range(num_images), desc="Sending images"):
         # Preprocess image
         image_data = preprocess_image_for_cnn(images[idx])
         
@@ -223,12 +251,12 @@ def send_cifar100_images():
     print("\n" + "="*60)
     print("Transmission Complete")
     print("="*60)
-    print(f"Total images sent: {success_count}/{NUM_IMAGES}")
+    print(f"Total images sent: {success_count}/{num_images}")
     print(f"Failed transmissions: {fail_count}")
     print(f"Total time: {elapsed_time:.2f} seconds")
-    print(f"Average time per image: {elapsed_time/NUM_IMAGES*1000:.2f} ms")
-    print(f"Throughput: {NUM_IMAGES/elapsed_time:.2f} images/second")
-    print(f"Data rate: {(BYTES_PER_IMAGE*NUM_IMAGES)/(elapsed_time*1024):.2f} KB/s")
+    print(f"Average time per image: {elapsed_time/num_images*1000:.2f} ms")
+    print(f"Throughput: {num_images/elapsed_time:.2f} images/second")
+    print(f"Data rate: {(BYTES_PER_IMAGE*num_images)/(elapsed_time*1024):.2f} KB/s")
     
     # Close serial port
     ser.close()
@@ -237,14 +265,40 @@ def send_cifar100_images():
     return True
 
 
-if __name__ == "__main__":
-    # Install required packages if not already installed
+def main():
+    """
+    Main entry point with command line arguments
+    """
+    parser = argparse.ArgumentParser(description='Send CIFAR-100 images to MAX78000 via UART')
+    parser.add_argument('--num-images', type=int, default=NUM_IMAGES,
+                        help=f'Number of images to send (default: {NUM_IMAGES})')
+    parser.add_argument('--train-set', action='store_true',
+                        help='Use training set instead of test set')
+    parser.add_argument('--port', type=str, default=SERIAL_PORT,
+                        help=f'Serial port to use (default: {SERIAL_PORT})')
+    parser.add_argument('--baudrate', type=int, default=BAUD_RATE,
+                        help=f'Baud rate (default: {BAUD_RATE})')
+    parser.add_argument('--timeout', type=int, default=TIMEOUT,
+                        help=f'Serial timeout in seconds (default: {TIMEOUT})')
+    
+    args = parser.parse_args()
+    
     print("Required packages: pyserial, tensorflow, numpy, tqdm")
     print("Install with: pip install pyserial tensorflow numpy tqdm\n")
     
-    success = send_cifar100_images()
+    success = send_cifar100_images(
+        num_images=args.num_images,
+        use_test_set=not args.train_set,
+        serial_port=args.port,
+        baudrate=args.baudrate,
+        timeout=args.timeout
+    )
     
     if success:
         print("\n✓ Program completed successfully")
     else:
         print("\n✗ Program failed")
+
+
+if __name__ == "__main__":
+    main()
