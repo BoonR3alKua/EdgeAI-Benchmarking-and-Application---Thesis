@@ -11,7 +11,6 @@ import struct
 from tqdm import tqdm
 import argparse
 
-<<<<<<< HEAD
 # ============================================================================
 # CONFIGURATION - Change these values as needed
 # ============================================================================
@@ -21,12 +20,6 @@ TIMEOUT = 5                 # Serial timeout in seconds
 NUM_IMAGES = 100            # Number of images to send
 USE_TEST_SET = True         # True = test set, False = training set
 # ============================================================================
-=======
-# UART Configuration
-SERIAL_PORT = 'COM6'  # Default, will auto-detect if this fails
-BAUD_RATE = 115200
-TIMEOUT = 5  # seconds
->>>>>>> origin/main
 
 # Image Configuration (CIFAR-100 standard)
 IMAGE_SIZE = 32
