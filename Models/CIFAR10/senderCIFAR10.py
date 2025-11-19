@@ -1,6 +1,6 @@
 """
-CIFAR-100 Image Sender via UART
-Sends images from CIFAR-100 dataset to MAX78000 device via UART COM5
+CIFAR-10 Image Sender via UART
+Sends images from CIFAR-10 dataset to MAX78000 device via UART COM5
 """
 
 import serial
@@ -15,14 +15,14 @@ import argparse
 # ============================================================================
 # CONFIGURATION - Change these values as needed
 # ============================================================================
-SERIAL_PORT = 'COM5'        # Default COM port, will auto-detect if this fails
+SERIAL_PORT = 'COM6'        # Default COM port, will auto-detect if this fails
 BAUD_RATE = 115200          # Baud rate for serial communication
 NUM_IMAGES = 100            # Number of images to send
 USE_TEST_SET = True         # True = test set, False = training set
 TIMEOUT = 5                 # Serial timeout in seconds
 # ============================================================================
 
-# Image Configuration (CIFAR-100 standard)
+# Image Configuration (CIFAR-10 standard)
 IMAGE_SIZE = 32
 NUM_CHANNELS = 3
 BYTES_PER_IMAGE = IMAGE_SIZE * IMAGE_SIZE * NUM_CHANNELS  # 3072 bytes
@@ -32,9 +32,9 @@ START_MARKER = b'\xFF\xAA'  # Start of transmission marker
 END_MARKER = b'\xBB\xFF'    # End of transmission marker
 
 
-def load_cifar100_images(num_images=1000, use_test_set=True):
+def load_cifar10_images(num_images=1000, use_test_set=True):
     """
-    Load CIFAR-100 images from TensorFlow datasets
+    Load CIFAR-10 images from TensorFlow datasets
     
     Args:
         num_images: number of images to load
@@ -44,10 +44,10 @@ def load_cifar100_images(num_images=1000, use_test_set=True):
         images: numpy array of shape (num_images, 32, 32, 3)
         labels: numpy array of shape (num_images,)
     """
-    print("Loading CIFAR-100 dataset from TensorFlow...")
+    print("Loading CIFAR-10 dataset from TensorFlow...")
     
-    # Load CIFAR-100 dataset
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar100.load_data()
+    # Load CIFAR-10 dataset
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
     
     # Use test set or training set
     if use_test_set:
@@ -78,7 +78,7 @@ def preprocess_image_for_cnn(image):
     image = image.astype(np.uint8)
     
     # CNN expects HWC format (Height, Width, Channel)
-    # CIFAR-100 is already in this format
+    # CIFAR-10 is already in this format
     
     # Flatten the image to 1D array for transmission
     flattened = image.flatten()
@@ -210,10 +210,10 @@ def open_serial_port(port=SERIAL_PORT, baudrate=BAUD_RATE, timeout=TIMEOUT):
     return ser, port_to_use
 
 
-def send_cifar100_images(num_images=NUM_IMAGES, use_test_set=USE_TEST_SET,
+def send_cifar10_images(num_images=NUM_IMAGES, use_test_set=USE_TEST_SET,
                         serial_port=SERIAL_PORT, baudrate=BAUD_RATE, timeout=TIMEOUT):
     """
-    Main function to send CIFAR-100 images via UART
+    Main function to send CIFAR-10 images via UART
     
     Args:
         num_images: number of images to send
@@ -223,7 +223,7 @@ def send_cifar100_images(num_images=NUM_IMAGES, use_test_set=USE_TEST_SET,
         timeout: timeout in seconds
     """
     print("="*60)
-    print("CIFAR-100 to MAX78000 UART Sender")
+    print("CIFAR-10 to MAX78000 UART Sender")
     print("="*60)
     print(f"Configuration:")
     print(f"  - Number of images: {num_images}")
@@ -232,7 +232,7 @@ def send_cifar100_images(num_images=NUM_IMAGES, use_test_set=USE_TEST_SET,
     print(f"  - Baud rate: {baudrate}")
     
     # Load images
-    images, labels = load_cifar100_images(num_images, use_test_set)
+    images, labels = load_cifar10_images(num_images, use_test_set)
     
     # Open serial port
     ser, port_name = open_serial_port(serial_port, baudrate, timeout)
@@ -292,7 +292,7 @@ def main():
     """
     Main entry point with command line arguments
     """
-    parser = argparse.ArgumentParser(description='Send CIFAR-100 images to MAX78000 via UART')
+    parser = argparse.ArgumentParser(description='Send CIFAR-10 images to MAX78000 via UART')
     parser.add_argument('--num-images', type=int, default=NUM_IMAGES,
                         help=f'Number of images to send (default: {NUM_IMAGES})')
     parser.add_argument('--train-set', action='store_true',
@@ -309,7 +309,7 @@ def main():
     print("Required packages: pyserial, tensorflow, numpy, tqdm")
     print("Install with: pip install pyserial tensorflow numpy tqdm\n")
     
-    success = send_cifar100_images(
+    success = send_cifar10_images(
         num_images=args.num_images,
         use_test_set=not args.train_set,
         serial_port=args.port,
