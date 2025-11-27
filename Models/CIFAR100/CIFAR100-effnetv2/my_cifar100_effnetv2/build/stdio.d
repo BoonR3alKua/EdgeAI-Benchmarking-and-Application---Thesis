@@ -1,4 +1,4 @@
-D:/Thesis/Models/CIFAR100-effnetv2/my_cifar100_effnetv2/build/stdio.o: \
+D:/Thesis/Models/CIFAR100/CIFAR100-effnetv2/my_cifar100_effnetv2/build/stdio.o: \
  D:/MaximSDK/Libraries/MiscDrivers/stdio.c \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\errno.h \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\sys\reent.h \

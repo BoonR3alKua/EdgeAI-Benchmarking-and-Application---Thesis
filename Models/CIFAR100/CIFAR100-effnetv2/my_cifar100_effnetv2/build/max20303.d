@@ -1,4 +1,4 @@
-D:/Thesis/Models/CIFAR100-effnetv2/my_cifar100_effnetv2/build/max20303.o: \
+D:/Thesis/Models/CIFAR100/CIFAR100-effnetv2/my_cifar100_effnetv2/build/max20303.o: \
  D:/MaximSDK/Libraries/MiscDrivers/PMIC/max20303.c \
  d:\maximsdk\tools\gnutools\10.3\lib\gcc\arm-none-eabi\10.3.1\include\stdint.h \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\stdint.h \

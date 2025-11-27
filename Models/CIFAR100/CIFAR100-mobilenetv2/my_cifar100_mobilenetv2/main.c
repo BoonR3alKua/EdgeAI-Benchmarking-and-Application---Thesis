@@ -63,11 +63,12 @@ extern void softmax_q17p14_q15(const q31_t *vec_in, const uint16_t dim_vec, q15_
 #define NUM_CHANNELS 3
 #define BYTES_PER_IMAGE (IMAGE_SIZE * IMAGE_SIZE * NUM_CHANNELS)  // 3072 bytes
 
-// Protocol markers
-#define START_MARKER_1 0xFF
-#define START_MARKER_2 0xAA
-#define END_MARKER_1 0xBB
-#define END_MARKER_2 0xFF
+// Protocol markers - Using unlikely byte sequences for image data
+// Start: 0xDE 0xAD 0xBE 0xEF (DEADBEEF - classic debug marker)
+#define START_MARKER_1 0xDE
+#define START_MARKER_2 0xAD
+#define START_MARKER_3 0xBE
+#define START_MARKER_4 0xEF
 
 // Buffers
 static uint8_t rx_buffer[BYTES_PER_IMAGE + 16];  // Extra space for protocol overhead
@@ -80,43 +81,88 @@ static q15_t ml_softmax[CNN_NUM_OUTPUTS];
 volatile uint32_t cnn_time;
 
 /**
+ * Receive a single byte with timeout
+ * Returns: byte value (0-255) on success, negative on error/timeout
+ */
+int uart_read_byte_timeout(mxc_uart_regs_t *uart, uint32_t timeout_loops)
+{
+    uint32_t loops = 0;
+    int byte_read;
+    
+    while (loops < timeout_loops) {
+        byte_read = MXC_UART_ReadCharacter(uart);
+        if (byte_read >= 0) {
+            return byte_read;
+        }
+        loops++;
+    }
+    
+    return E_TIME_OUT;
+}
+
+/**
  * Receive image via UART with protocol framing
+ * Fixed packet size: START_MARKER(4) + IDX(4) + LABEL(1) + IMAGE(3072) = 3081 bytes
  */
 int receive_image_uart(uint32_t *image_idx, uint8_t *label)
 {
     int bytes_received = 0;
     int byte_read;
     uint8_t byte;
-    int state = 0;  // 0: waiting for start, 1: reading data, 2: verifying end
+    int state = 0;  // 0-3: waiting for 4-byte start marker, 4: reading data
+    uint32_t timeout_loops = 10000000;  // Large number of loops for timeout (~30 sec at 60MHz)
     
-    printf("Waiting for image...\n");
-    
-    // State machine to receive packet
+    // State machine to receive packet with 4-byte start marker
     while (1) {
-        // Read one byte
-        byte_read = MXC_UART_ReadCharacter(RX_UART);
+        // Read one byte with timeout
+        byte_read = uart_read_byte_timeout(RX_UART, timeout_loops);
         if (byte_read < 0) {
-            continue;  // No data available or error
+            if (byte_read == E_TIME_OUT) {
+                printf("Error: UART timeout waiting for data\n");
+            }
+            return byte_read;  // Error or timeout
         }
         byte = (uint8_t)byte_read;
         
         switch (state) {
-            case 0:  // Waiting for start marker
+            case 0:  // Waiting for first start marker byte (0xDE)
                 if (byte == START_MARKER_1) {
                     state = 1;
                 }
                 break;
                 
-            case 1:  // Got first start marker, check second
+            case 1:  // Waiting for second start marker byte (0xAD)
                 if (byte == START_MARKER_2) {
-                    bytes_received = 0;
                     state = 2;
+                } else if (byte == START_MARKER_1) {
+                    state = 1;  // Stay in state 1 if we get another 0xDE
                 } else {
                     state = 0;
                 }
                 break;
                 
-            case 2:  // Reading packet data
+            case 2:  // Waiting for third start marker byte (0xBE)
+                if (byte == START_MARKER_3) {
+                    state = 3;
+                } else if (byte == START_MARKER_1) {
+                    state = 1;
+                } else {
+                    state = 0;
+                }
+                break;
+                
+            case 3:  // Waiting for fourth start marker byte (0xEF)
+                if (byte == START_MARKER_4) {
+                    bytes_received = 0;
+                    state = 4;
+                } else if (byte == START_MARKER_1) {
+                    state = 1;
+                } else {
+                    state = 0;
+                }
+                break;
+                
+            case 4:  // Reading packet data
                 // Check for buffer overflow before writing
                 if (bytes_received >= sizeof(rx_buffer)) {
                     printf("Error: Buffer overflow, resetting\n");
@@ -127,27 +173,19 @@ int receive_image_uart(uint32_t *image_idx, uint8_t *label)
                 
                 rx_buffer[bytes_received++] = byte;
                 
-                // Check if we've received all data (4 bytes idx + 1 byte label + 3072 bytes image + 2 bytes end marker)
-                if (bytes_received >= (4 + 1 + BYTES_PER_IMAGE + 2)) {
-                    // Verify end markers
-                    if (rx_buffer[bytes_received - 2] == END_MARKER_1 &&
-                        rx_buffer[bytes_received - 1] == END_MARKER_2) {
-                        
-                        // Extract image index
-                        *image_idx = *((uint32_t *)&rx_buffer[0]);
-                        
-                        // Extract label
-                        *label = rx_buffer[4];
-                        
-                        // Copy image data
-                        memcpy(input_data, &rx_buffer[5], BYTES_PER_IMAGE);
-                        
-                        printf("Received image %lu, label %d\n", *image_idx, *label);
-                        return E_NO_ERROR;
-                    } else {
-                        printf("Error: Invalid end markers\n");
-                        return E_FAIL;
-                    }
+                // Fixed packet: 4 bytes idx + 1 byte label + 3072 bytes image = 3077 bytes
+                if (bytes_received >= (4 + 1 + BYTES_PER_IMAGE)) {
+                    // Extract image index
+                    *image_idx = *((uint32_t *)&rx_buffer[0]);
+                    
+                    // Extract label
+                    *label = rx_buffer[4];
+                    
+                    // Copy image data
+                    memcpy(input_data, &rx_buffer[5], BYTES_PER_IMAGE);
+                    
+                    printf("Received Image %lu (Label: %d)\n", *image_idx, *label);
+                    return E_NO_ERROR;
                 }
                 break;
         }
@@ -173,6 +211,7 @@ void load_input_from_buffer(void)
 
 /**
  * Perform CNN inference and return classification
+ * Returns the CNN inference time in microseconds via cnn_time global
  */
 int classify_image(void)
 {
@@ -182,8 +221,15 @@ int classify_image(void)
     cnn_time = 0;  // Reset timer before starting CNN
     cnn_start();
     
-    while (cnn_time == 0)
-        MXC_LP_EnterSleepMode();
+    // Disable Deep Sleep mode to allow CNN interrupt to wake CPU
+    SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
+    
+    // Wait for CNN to complete using WFI (Wait For Interrupt)
+    while (cnn_time == 0) {
+        asm volatile("wfi");  // More power efficient than busy wait
+    }
+    
+    // cnn_time now contains inference time in microseconds (set by CNN_ISR)
     
     // Unload and compute softmax
     cnn_unload((uint32_t *)ml_data);
@@ -222,39 +268,53 @@ int main(void)
     int total_count = 0;
     float total_confidence = 0.0f;
     float avg_confidence = 0.0f;
+    uint32_t total_cnn_time = 0;  // Accumulate CNN inference times
+    float avg_cnn_time = 0.0f;
+    uint32_t min_cnn_time = 0xFFFFFFFF;
+    uint32_t max_cnn_time = 0;
     
+    // Initialize system clocks and cache
     MXC_ICC_Enable(MXC_ICC0);
     MXC_SYS_Clock_Select(MXC_SYS_CLOCK_IPO);
     SystemCoreClockUpdate();
     
-    printf("\n*** CIFAR-100 CNN Inference via UART (MobileNetV2) ***\n");
-    printf("Ready to receive images on UART0 at %d baud\n", UART_BAUD);
+    printf("\n\n**************** CIFAR-100 CNN Inference via UART ******************\n");
+    printf("Model: MobileNetV2\n");
+    printf("UART: %d baud on UART0\n", UART_BAUD);
     printf("NOTE: Close this console before running sender.py\n");
-    printf("      Results will be visible after sender completes.\n\n");
+    printf("      Results will be visible after sender completes.\n");
+    printf("********************************************************************\n\n");
     
     // Initialize UART for data reception
+    printf("Initializing UART...\n");
     error = MXC_UART_Init(RX_UART, UART_BAUD, MXC_UART_APB_CLK);
     if (error < E_NO_ERROR) {
-        printf("Error initializing UART: %d\n", error);
+        printf("-->Error initializing UART: %d\n", error);
+        printf("-->Example Failed\n");
         return error;
     }
+    printf("-->UART Initialized\n\n");
     
     // Initialize CNN
+    printf("Initializing CNN...\n");
     cnn_enable(MXC_S_GCR_PCLKDIV_CNNCLKSEL_PCLK, MXC_S_GCR_PCLKDIV_CNNCLKDIV_DIV1);
     cnn_init();
     cnn_load_weights();
     cnn_load_bias();
     cnn_configure();
+    printf("-->CNN initialized\n\n");
     
-    printf("CNN initialized. Ready to receive images.\n\n");
+    printf("Ready to receive images. Waiting for data...\n\n");
     
     LED_On(0);  // Indicate ready
     
     // Main loop: receive and classify images
     while (1) {
         // Receive image via UART
-        if (receive_image_uart(&image_idx, &ground_truth_label) != E_NO_ERROR) {
-            printf("Error receiving image\n");
+        error = receive_image_uart(&image_idx, &ground_truth_label);
+        if (error != E_NO_ERROR) {
+            printf("-->Error receiving image: %d\n", error);
+            printf("Resetting and waiting for next image...\n\n");
             continue;
         }
         
@@ -269,6 +329,12 @@ int main(void)
         // Get confidence for predicted class
         float confidence = get_confidence(predicted_class);
         
+        // Track CNN inference timing
+        total_cnn_time += cnn_time;
+        if (cnn_time < min_cnn_time) min_cnn_time = cnn_time;
+        if (cnn_time > max_cnn_time) max_cnn_time = cnn_time;
+        avg_cnn_time = (float)total_cnn_time / (total_count + 1);
+        
         // Check accuracy
         total_count++;
         total_confidence += confidence;
@@ -278,15 +344,27 @@ int main(void)
             correct_count++;
         }
         
-        // Print results with confidence
-        printf("Image %lu: Predicted=%d (%.2f%%), Actual=%d, %s\n",
-               image_idx, predicted_class, confidence, ground_truth_label,
-               (predicted_class == ground_truth_label) ? "CORRECT" : "WRONG");
-        
-        printf("Accuracy: %d/%d (%.2f%%), Avg Confidence: %.2f%%\n\n",
+        // Print results with confidence and timing
+        printf("----------------------------------------\n");
+        printf("Image %lu Results:\n", image_idx);
+        printf("  Predicted:    %d (%.2f%% confidence)\n", predicted_class, (double)confidence);
+        printf("  Actual:       %d\n", ground_truth_label);
+        printf("  Status:       %s\n", (predicted_class == ground_truth_label) ? "CORRECT" : "WRONG");
+        printf("  CNN Time:     %lu us (%.2f ms)\n", cnn_time, (double)cnn_time / 1000.0);
+        printf("Overall Statistics:\n");
+        printf("  Accuracy:     %d/%d (%.2f%%)\n",
                correct_count, total_count,
-               (double)correct_count / total_count * 100.0,
-               avg_confidence);
+               ((double)correct_count / (double)total_count) * 100.0);
+        printf("  Avg Conf:     %.2f%%\n", (double)avg_confidence);
+        printf("  Avg CNN Time: %.2f us (%.2f ms)\n", (double)avg_cnn_time, (double)avg_cnn_time / 1000.0);
+        printf("  Min CNN Time: %lu us (%.2f ms)\n", min_cnn_time, (double)min_cnn_time / 1000.0);
+        printf("  Max CNN Time: %lu us (%.2f ms)\n", max_cnn_time, (double)max_cnn_time / 1000.0);
+        printf("  Throughput:   %.2f images/sec\n", 1000000.0 / (double)avg_cnn_time);
+        printf("----------------------------------------\n\n");
+        
+        // Ensure all output is transmitted before continuing
+        MXC_UART_ClearRXFIFO(RX_UART);  // Clear any stale data
+        MXC_Delay(MXC_DELAY_MSEC(100));  // Small delay to ensure transmission complete
         
         // Reconfigure CNN for next inference
         cnn_init();

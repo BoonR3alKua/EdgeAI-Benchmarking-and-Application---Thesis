@@ -1,4 +1,4 @@
-D:/Thesis/Models/CIFAR100-effnetv2/my_cifar100_effnetv2/build/softmax.o: \
+D:/Thesis/Models/CIFAR100/CIFAR100-effnetv2/my_cifar100_effnetv2/build/softmax.o: \
  softmax.c D:/MaximSDK/Libraries/PeriphDrivers/Include/MAX78000/mxc.h \
  D:/MaximSDK/Libraries/PeriphDrivers/Include/MAX78000/mxc_device.h \
  D:/MaximSDK/Libraries/CMSIS/Device/Maxim/MAX78000/Include/max78000.h \

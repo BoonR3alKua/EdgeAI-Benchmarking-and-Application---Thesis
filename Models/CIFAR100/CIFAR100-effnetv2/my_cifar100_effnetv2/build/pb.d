@@ -1,4 +1,4 @@
-D:/Thesis/Models/CIFAR100-effnetv2/my_cifar100_effnetv2/build/pb.o: \
+D:/Thesis/Models/CIFAR100/CIFAR100-effnetv2/my_cifar100_effnetv2/build/pb.o: \
  D:/MaximSDK/Libraries/MiscDrivers/PushButton/pb.c \
  d:\maximsdk\tools\gnutools\10.3\lib\gcc\arm-none-eabi\10.3.1\include\stddef.h \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\stdlib.h \

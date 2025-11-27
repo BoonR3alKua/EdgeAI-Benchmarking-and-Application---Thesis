@@ -1,4 +1,4 @@
-D:/Thesis/Models/CIFAR100-effnetv2/my_cifar100_effnetv2/build/system_max78000.o: \
+D:/Thesis/Models/CIFAR100/CIFAR100-effnetv2/my_cifar100_effnetv2/build/system_max78000.o: \
  D:/MaximSDK/Libraries/CMSIS/Device/Maxim/MAX78000/Source/system_max78000.c \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\string.h \
  d:\maximsdk\tools\gnutools\10.3\arm-none-eabi\include\_ansi.h \
