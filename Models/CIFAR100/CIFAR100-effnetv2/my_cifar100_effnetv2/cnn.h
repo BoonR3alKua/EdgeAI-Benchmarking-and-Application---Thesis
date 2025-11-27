@@ -23,22 +23,32 @@ typedef int16_t q15_t;
 
 /*
   SUMMARY OF OPS
-  Hardware: 9,578,752 ops (9,486,848 macc; 89,856 comp; 2,048 add; 0 mul; 0 bitwise)
-    Layer 0: 232,448 ops (221,184 macc; 11,264 comp; 0 add; 0 mul; 0 bitwise)
-    Layer 1: 1,775,616 ops (1,769,472 macc; 6,144 comp; 0 add; 0 mul; 0 bitwise)
-    Layer 2: 614,400 ops (589,824 macc; 24,576 comp; 0 add; 0 mul; 0 bitwise)
-    Layer 3: 5,339,136 ops (5,308,416 macc; 30,720 comp; 0 add; 0 mul; 0 bitwise)
-    Layer 4: 248,320 ops (245,760 macc; 2,560 comp; 0 add; 0 mul; 0 bitwise)
-    Layer 5: 209,920 ops (204,800 macc; 5,120 comp; 0 add; 0 mul; 0 bitwise)
-    Layer 6: 928,000 ops (921,600 macc; 6,400 comp; 0 add; 0 mul; 0 bitwise)
-    Layer 7: 82,944 ops (81,920 macc; 1,024 comp; 0 add; 0 mul; 0 bitwise)
-    Layer 8: 133,120 ops (131,072 macc; 2,048 comp; 0 add; 0 mul; 0 bitwise)
-    Layer 9: 2,048 ops (0 macc; 0 comp; 2,048 add; 0 mul; 0 bitwise)
-    Layer 10: 12,800 ops (12,800 macc; 0 comp; 0 add; 0 mul; 0 bitwise)
+  Hardware: 14,893,568 ops (14,733,824 macc; 132,096 comp; 27,648 add; 0 mul; 0 bitwise)
+    Layer 0 (stem): 688,128 ops (663,552 macc; 24,576 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 1 (stage1_conv): 5,332,992 ops (5,308,416 macc; 24,576 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 2 (stage1_short): 0 ops (0 macc; 0 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 3 (stage1_add): 24,576 ops (0 macc; 0 comp; 24,576 add; 0 mul; 0 bitwise)
+    Layer 4 (pool1): 24,576 ops (0 macc; 24,576 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 5 (stage2_fused): 2,666,496 ops (2,654,208 macc; 12,288 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 6 (stage2_proj): 602,112 ops (589,824 macc; 12,288 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 7 (pool2): 12,288 ops (0 macc; 12,288 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 8 (stage3_fused): 1,773,568 ops (1,769,472 macc; 4,096 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 9 (stage3_proj): 266,240 ops (262,144 macc; 4,096 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 10 (pool3): 4,096 ops (0 macc; 4,096 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 11 (stage4_expand): 66,560 ops (65,536 macc; 1,024 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 12 (stage4_spatial): 590,848 ops (589,824 macc; 1,024 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 13 (stage4_proj): 66,560 ops (65,536 macc; 1,024 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 14 (stage4_short): 0 ops (0 macc; 0 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 15 (stage4_add): 1,024 ops (0 macc; 0 comp; 1,024 add; 0 mul; 0 bitwise)
+    Layer 16 (stage5_expand): 133,120 ops (131,072 macc; 2,048 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 17 (stage5_spatial): 2,361,344 ops (2,359,296 macc; 2,048 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 18 (stage5_proj): 264,192 ops (262,144 macc; 2,048 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 19 (avg_pool): 2,048 ops (0 macc; 0 comp; 2,048 add; 0 mul; 0 bitwise)
+    Layer 20 (fc): 12,800 ops (12,800 macc; 0 comp; 0 add; 0 mul; 0 bitwise)
 
   RESOURCE USAGE
-  Weight memory: 183,776 bytes out of 442,368 bytes total (41.5%)
-  Bias memory:   740 bytes out of 2,048 bytes total (36.1%)
+  Weight memory: 280,136 bytes out of 442,368 bytes total (63.3%)
+  Bias memory:   948 bytes out of 2,048 bytes total (46.3%)
 */
 
 /* Number of outputs for this network */
