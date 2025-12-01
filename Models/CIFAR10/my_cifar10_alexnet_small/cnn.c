@@ -38,7 +38,7 @@
 // DO NOT EDIT - regenerate this file instead!
 
 // Configuring 9 layers
-// Input data: HWC
+// Input data: CHW
 // Layer 0: 3x64x64, max pool 2x2 with stride 2/2, conv2d with kernel size 3x3, stride 1/1, pad 1/1, ReLU, 32x32x32 output
 // Layer 1: 32x32x32, max pool 2x2 with stride 2/2, conv2d with kernel size 3x3, stride 1/1, pad 1/1, ReLU, 64x16x16 output
 // Layer 2: 64x16x16, no pooling, conv2d with kernel size 3x3, stride 1/1, pad 1/1, ReLU, 64x16x16 output
@@ -168,12 +168,12 @@ int cnn_configure(void)
   *((volatile uint32_t *) 0x50100290) = 0x00000001; // Stride
   *((volatile uint32_t *) 0x50100310) = 0x00001000; // SRAM write ptr
   *((volatile uint32_t *) 0x50100410) = 0x00002000; // Write ptr mask offs
-  *((volatile uint32_t *) 0x50100590) = 0x00002ba0; // Layer control
+  *((volatile uint32_t *) 0x50100590) = 0x00002be0; // Layer control
   *((volatile uint32_t *) 0x50100a10) = 0x0000f800; // Layer control 2
   *((volatile uint32_t *) 0x50100610) = 0x090009f8; // Mask offset and count
   *((volatile uint32_t *) 0x50100690) = 0x0000001f; // TRAM ptr max
   *((volatile uint32_t *) 0x50100790) = 0x00022000; // Post processing register
-  *((volatile uint32_t *) 0x50100710) = 0x00070007; // Mask and processor enables
+  *((volatile uint32_t *) 0x50100710) = 0x01010101; // Mask and processor enables
 
   // Layer 0 quadrant 1
   *((volatile uint32_t *) 0x50500010) = 0x00010041; // Rows
@@ -183,11 +183,12 @@ int cnn_configure(void)
   *((volatile uint32_t *) 0x50500290) = 0x00000001; // Stride
   *((volatile uint32_t *) 0x50500310) = 0x00001000; // SRAM write ptr
   *((volatile uint32_t *) 0x50500410) = 0x00002000; // Write ptr mask offs
-  *((volatile uint32_t *) 0x50500590) = 0x00000ba0; // Layer control
+  *((volatile uint32_t *) 0x50500590) = 0x00000be0; // Layer control
   *((volatile uint32_t *) 0x50500a10) = 0x0000f800; // Layer control 2
   *((volatile uint32_t *) 0x50500610) = 0x090009f8; // Mask offset and count
   *((volatile uint32_t *) 0x50500690) = 0x0000001f; // TRAM ptr max
   *((volatile uint32_t *) 0x50500790) = 0x00023080; // Post processing register
+  *((volatile uint32_t *) 0x50500710) = 0x00010001; // Mask and processor enables
 
   // Layer 0 quadrant 2
   *((volatile uint32_t *) 0x50900010) = 0x00010041; // Rows
@@ -197,7 +198,7 @@ int cnn_configure(void)
   *((volatile uint32_t *) 0x50900290) = 0x00000001; // Stride
   *((volatile uint32_t *) 0x50900310) = 0x00001000; // SRAM write ptr
   *((volatile uint32_t *) 0x50900410) = 0x00002000; // Write ptr mask offs
-  *((volatile uint32_t *) 0x50900590) = 0x00000ba0; // Layer control
+  *((volatile uint32_t *) 0x50900590) = 0x00000be0; // Layer control
   *((volatile uint32_t *) 0x50900a10) = 0x0000f800; // Layer control 2
   *((volatile uint32_t *) 0x50900610) = 0x090009f8; // Mask offset and count
   *((volatile uint32_t *) 0x50900690) = 0x0000001f; // TRAM ptr max
@@ -211,7 +212,7 @@ int cnn_configure(void)
   *((volatile uint32_t *) 0x50d00290) = 0x00000001; // Stride
   *((volatile uint32_t *) 0x50d00310) = 0x00001000; // SRAM write ptr
   *((volatile uint32_t *) 0x50d00410) = 0x00002000; // Write ptr mask offs
-  *((volatile uint32_t *) 0x50d00590) = 0x00000ba0; // Layer control
+  *((volatile uint32_t *) 0x50d00590) = 0x00000be0; // Layer control
   *((volatile uint32_t *) 0x50d00a10) = 0x0000f800; // Layer control 2
   *((volatile uint32_t *) 0x50d00610) = 0x090009f8; // Mask offset and count
   *((volatile uint32_t *) 0x50d00690) = 0x0000001f; // TRAM ptr max

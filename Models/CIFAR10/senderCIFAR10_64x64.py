@@ -15,7 +15,7 @@ from tqdm import tqdm
 import argparse
 
 # ============================================================================
-# CONFIGURATION - Change these values as needed
+# CONFIGURATION SETTINGS
 # ============================================================================
 SERIAL_PORT = 'COM6'        # Default COM port, will auto-detect if this fails
 BAUD_RATE = 115200          # Baud rate for serial communication
@@ -213,15 +213,14 @@ def send_image_via_uart(ser, image_data, image_idx, label):
         bytes_sent = ser.write(packet)
         ser.flush()  # Ensure all data is transmitted
         
-        # Wait for device to fully process before reading response
-        # Device needs: UART RX (~12 sec for 12KB at 115200) + CNN inference + printing
-        # 12288 bytes / (115200/10) = ~1.07 seconds for pure transmission
-        # Add margin for processing and response
-        time.sleep(8.0)  # Give device plenty of time to receive all data, process, and print everything
+        # Wait for device to process
+        # 12288 bytes at 115200 baud (with 10 bits per byte) = ~1.07 seconds
+        # Add margin for CNN inference (~3-5ms) and printing
+        time.sleep(1.5)  # Wait for transmission + processing
         
         # Read all available response from device
         device_response = bytearray()
-        max_retries = 20  # More retries for larger data
+        max_retries = 10
         retry_count = 0
         
         # Keep reading until we get the complete response
@@ -232,7 +231,7 @@ def send_image_via_uart(ser, image_data, image_idx, label):
                 retry_count = 0  # Reset retry counter when we get data
             else:
                 retry_count += 1
-                time.sleep(0.3)  # Wait longer between retries
+                time.sleep(0.1)  # Short wait between retries
         
         # Display device output
         if device_response:
@@ -467,15 +466,19 @@ def main():
     print("Required packages: pyserial, tensorflow, numpy, tqdm, pillow")
     print("Install with: pip install pyserial tensorflow numpy tqdm pillow\n")
     
-    # Pass None for arguments not provided, let send_cifar10_images use global defaults
+    # Determine format settings
+    # Default is CHW format for AlexNet-Small (USE_CHW_FORMAT = True)
+    use_chw = not args.hwc  # True (CHW) unless --hwc flag is set
+    act_mode_8bit = not args.float_mode  # True (8-bit) unless --float-mode flag is set
+    
     success = send_cifar10_images(
         num_images=args.num_images,
-        use_test_set=None if not args.train_set else False,  # None means use default
+        use_test_set=not args.train_set,  # True (test set) unless --train-set flag is set
         serial_port=args.port,
         baudrate=args.baudrate,
         timeout=args.timeout,
-        act_mode_8bit=None if not args.float_mode else False,  # None means use default
-        use_chw=None if not args.hwc else False,  # None means use default
+        act_mode_8bit=act_mode_8bit,
+        use_chw=use_chw,
         interpolation=args.interpolation
     )
     

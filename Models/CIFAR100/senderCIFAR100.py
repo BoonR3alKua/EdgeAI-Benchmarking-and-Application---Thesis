@@ -1,6 +1,7 @@
 """
 CIFAR-100 Image Sender via UART
-Sends images from CIFAR-100 dataset to MAX78000 device via UART COM5
+Sends images from CIFAR-100 dataset to MAX78000 device via UART
+For use with SimpleNet/MobileNetV2/EfficientNetV2 models that expect 32x32 input
 """
 import serial
 import serial.tools.list_ports
@@ -12,7 +13,7 @@ from tqdm import tqdm
 import argparse
 
 # ============================================================================
-# CONFIGURATION - Change these values as needed
+# CONFIGURATION SETTINGS
 # ============================================================================
 SERIAL_PORT = 'COM6'        # Default COM port, will auto-detect if this fails
 BAUD_RATE = 115200          # Baud rate for serial communication
@@ -20,7 +21,8 @@ NUM_IMAGES = 50             # Number of images to send (benchmark default)
 USE_TEST_SET = True         # True = test set, False = training set
 TIMEOUT = 5                 # Serial timeout in seconds
 ACT_MODE_8BIT = True        # True = [-128, 127], False = [-128/128, 127/128]
-USE_CHW_FORMAT = True      # True = CHW (Channels,Height,Width), False = HWC (Height,Width,Channels)
+USE_CHW_FORMAT = True       # True = CHW (Channels,Height,Width), False = HWC (Height,Width,Channels)
+                            # CHW: Data sent as [R channel 1024 bytes][G channel 1024 bytes][B channel 1024 bytes]
 # ============================================================================
 
 # Image Configuration (CIFAR-100 standard)
@@ -65,63 +67,78 @@ def load_cifar100_images(num_images=1000, use_test_set=True):
     return images, labels
 
 
-def normalize_image(image, act_mode_8bit=None):
+def normalize_image(image, act_mode_8bit=True):
     """
-    Normalize image according to AI8X training normalization.
-    AI8X uses: (x - 128) normalization to map [0,255] to [-128,127]
+    Normalize image using AI8X standard normalization
+    Converts from [0, 255] to [-128, 127] using simple subtraction
     
     Args:
         image: numpy array of shape (32, 32, 3) with values 0-255
-        act_mode_8bit: if None, uses global ACT_MODE_8BIT
-                      if True, returns int8 values in [-128, 127]
-                      if False, returns float values in [-128/128, 127/128]
-    
+        act_mode_8bit: if True, output is [-128, 127]; if False, output is [-1, 1]
+        
     Returns:
-        normalized image as either int8 or float array
+        normalized: numpy array with normalized values
     """
-    if act_mode_8bit is None:
-        act_mode_8bit = ACT_MODE_8BIT
+    # Convert to float for normalization
+    img = image.astype(np.float32)
     
-    # AI8X normalization: x - 128
-    normalized = image.astype(np.float32) - 128.0
+    # AI8X-style normalization: simply subtract 128 to center at 0
+    # This maps [0, 255] -> [-128, 127]
+    img = img - 128.0
+    img = np.clip(img, -128, 127)  # Clamp to valid range
     
-    if act_mode_8bit:
-        # Return as int8 for 8-bit mode
-        return normalized.astype(np.int8)
-    else:
-        # For float mode, divide by 128 to get [-1, 1) range
-        return (normalized / 128.0).astype(np.float32)
+    if not act_mode_8bit:
+        # Divide by 128 to get [-1, 1] range
+        img = img / 128.0
+    
+    return img
 
 
-def preprocess_image_for_cnn(image, use_chw=None, act_mode_8bit=None):
+def preprocess_image_for_cnn(image, act_mode_8bit=None, use_chw=None):
     """
-    Preprocess image to match CNN input format with AI8X normalization.
+    Preprocess image to match the CNN input format with proper normalization
     
     Args:
-        image: numpy array of shape (32, 32, 3) with values 0-255
-        use_chw: if None, uses global USE_CHW_FORMAT
-                if True, converts to CHW format (Channels, Height, Width)
-                if False, keeps HWC format (Height, Width, Channels)
-        act_mode_8bit: if None, uses global ACT_MODE_8BIT
-    
+        image: numpy array of shape (32, 32, 3) with values 0-255 in HWC format
+        act_mode_8bit: if True, normalize to [-128, 127]; if False, to [-1, 1]
+        use_chw: if True, convert to CHW format; if False, keep HWC format
+        
     Returns:
         processed_data: byte array ready for transmission
     """
-    if use_chw is None:
-        use_chw = USE_CHW_FORMAT
+    # Use global defaults if not specified
     if act_mode_8bit is None:
         act_mode_8bit = ACT_MODE_8BIT
+    if use_chw is None:
+        use_chw = USE_CHW_FORMAT
     
-    # Apply AI8X normalization
-    processed = normalize_image(image, act_mode_8bit)
+    # Verify input is in HWC format
+    assert image.shape == (IMAGE_SIZE, IMAGE_SIZE, 3), \
+        f"Expected HWC format ({IMAGE_SIZE}, {IMAGE_SIZE}, 3), got {image.shape}"
     
-    # Convert to CHW format if requested
+    # Apply normalization (same as training)
+    normalized = normalize_image(image, act_mode_8bit)
+    
+    if act_mode_8bit:
+        # Convert to int8 for 8-bit mode
+        normalized = normalized.astype(np.int8)
+        # Convert to uint8 for transmission (reinterpret bytes)
+        processed = normalized.view(np.uint8)
+    else:
+        # For float mode, we need to quantize back to int8 range for transmission
+        # The device will interpret these as signed values
+        quantized = (normalized * 128.0).astype(np.int8)
+        processed = quantized.view(np.uint8)
+    
     if use_chw:
-        # Transpose from HWC (32, 32, 3) to CHW (3, 32, 32)
-        processed = np.transpose(processed, (2, 0, 1))
-    
-    # Flatten and convert to bytes
-    flattened = processed.flatten()
+        # CHW format: Channels, Height, Width (3x32x32)
+        # All R values first, then all G values, then all B values
+        processed_chw = np.transpose(processed, (2, 0, 1))
+        flattened = processed_chw.flatten(order='C')
+    else:
+        # HWC format: Height, Width, Channels (32x32x3)
+        # Interleaved R,G,B per pixel: R0,G0,B0, R1,G1,B1, ...
+        flattened = processed.flatten(order='C')
     
     return flattened.tobytes()
 
@@ -129,11 +146,10 @@ def preprocess_image_for_cnn(image, use_chw=None, act_mode_8bit=None):
 def send_image_via_uart(ser, image_data, image_idx, label):
     """
     Send a single image via UART with protocol framing
-    Fixed packet size: START_MARKER(4) + IDX(4) + LABEL(1) + IMAGE(3072) = 3081 bytes
     
     Args:
         ser: serial port object
-        image_data: preprocessed image bytes (3072 bytes)
+        image_data: preprocessed image bytes (3072 bytes for 32x32)
         image_idx: index of the image
         label: ground truth label
         
@@ -141,25 +157,45 @@ def send_image_via_uart(ser, image_data, image_idx, label):
         success: boolean indicating if transmission was successful
     """
     try:
-        # Create fixed-size packet: [START_MARKER(4)][IMAGE_IDX(4)][LABEL(1)][IMAGE_DATA(3072)]
+        # Create packet: [START_MARKER][IMAGE_IDX][LABEL][IMAGE_DATA]
+        # No end marker needed - fixed packet size provides framing
         packet = bytearray()
-        packet.extend(START_MARKER)                   # 4 bytes
+        packet.extend(START_MARKER)  # 4 bytes: DEADBEEF
         packet.extend(struct.pack('<I', image_idx))  # 4 bytes for image index
         packet.extend(struct.pack('<B', label))       # 1 byte for label
-        packet.extend(image_data)                     # 3072 bytes for image
-        # Total: 3081 bytes (fixed size, no END_MARKER needed)
+        packet.extend(image_data)                     # 3072 bytes for 32x32 image
         
         # Send packet
         bytes_sent = ser.write(packet)
+        ser.flush()  # Ensure all data is transmitted
         
-        # Wait for device to process and respond
-        time.sleep(0.1)  # Give device time to process
-        if ser.in_waiting > 0:
-            response = ser.read(ser.in_waiting)
+        # Wait for device to process
+        # 3072 bytes at 115200 baud (with 10 bits per byte) = ~0.27 seconds
+        # Add margin for CNN inference (~3ms) and printing
+        time.sleep(0.5)  # Wait for transmission + processing
+        
+        # Read all available response from device
+        device_response = bytearray()
+        max_retries = 10
+        retry_count = 0
+        
+        # Keep reading until we get the complete response
+        while retry_count < max_retries:
+            if ser.in_waiting > 0:
+                chunk = ser.read(ser.in_waiting)
+                device_response.extend(chunk)
+                retry_count = 0  # Reset retry counter when we get data
+            else:
+                retry_count += 1
+                time.sleep(0.1)  # Short wait between retries
+        
+        # Display device output
+        if device_response:
             try:
-                print(response.decode('utf-8', errors='ignore'), end='')
-            except:
-                pass
+                device_output = device_response.decode('utf-8', errors='ignore')
+                print(device_output, end='')  # Device output already has newlines
+            except Exception as e:
+                print(f"Error decoding device response: {e}")
         
         return bytes_sent == len(packet)
         
@@ -168,63 +204,31 @@ def send_image_via_uart(ser, image_data, image_idx, label):
         return False
 
 
-def send_cifar100_images(num_images=None, use_test_set=None,
-                        serial_port=None, baudrate=None, timeout=None,
-                        use_chw=None, act_mode_8bit=None):
+def open_serial_port(port=SERIAL_PORT, baudrate=BAUD_RATE, timeout=TIMEOUT):
     """
-    Main function to send CIFAR-100 images via UART
+    Open serial port with auto-detection fallback
     
     Args:
-        num_images: number of images to send (default: global NUM_IMAGES)
-        use_test_set: if True, use test set; otherwise use training set (default: global USE_TEST_SET)
-        serial_port: COM port to use (default: global SERIAL_PORT)
-        baudrate: baud rate for serial communication (default: global BAUD_RATE)
-        timeout: timeout in seconds (default: global TIMEOUT)
-        use_chw: CHW format if True, HWC if False (default: global USE_CHW_FORMAT)
-        act_mode_8bit: 8-bit mode if True, float mode if False (default: global ACT_MODE_8BIT)
+        port: COM port to use
+        baudrate: baud rate for serial communication
+        timeout: timeout in seconds
+    
+    Returns:
+        ser: serial port object or None if failed
+        port_name: name of the opened port
     """
-    # Use global defaults if not specified (evaluated at runtime)
-    if num_images is None:
-        num_images = NUM_IMAGES
-    if use_test_set is None:
-        use_test_set = USE_TEST_SET
-    if serial_port is None:
-        serial_port = SERIAL_PORT
-    if baudrate is None:
-        baudrate = BAUD_RATE
-    if timeout is None:
-        timeout = TIMEOUT
-    if use_chw is None:
-        use_chw = USE_CHW_FORMAT
-    if act_mode_8bit is None:
-        act_mode_8bit = ACT_MODE_8BIT
-    
-    print("="*60)
-    print("CIFAR-100 to MAX78000 UART Sender")
-    print("="*60)
-    print(f"Configuration:")
-    print(f"  - Number of images: {num_images}")
-    print(f"  - Dataset: {'Test' if use_test_set else 'Training'} set")
-    print(f"  - Serial port: {serial_port}")
-    print(f"  - Baud rate: {baudrate}")
-    print(f"  - Format: {'CHW (Channels,Height,Width)' if use_chw else 'HWC (Height,Width,Channels)'}")
-    print(f"  - Mode: {'8-bit int8 [-128,127]' if act_mode_8bit else 'Float [-1.0,1.0)'}")
-    
-    # Load images
-    images, labels = load_cifar100_images(num_images, use_test_set)
-    
-    # Auto-detect COM port if default fails
+    # Show available COM ports
     available_ports = []
-    for port in serial.tools.list_ports.comports():
-        available_ports.append(f"{port.device}: {port.description}")
+    for port_info in serial.tools.list_ports.comports():
+        available_ports.append(f"{port_info.device}: {port_info.description}")
     
     print("\nAvailable COM ports:")
     for port_info in available_ports:
         print(f"  - {port_info}")
     
     # Try to open serial port
-    port_to_use = serial_port
     ser = None
+    port_to_use = port
     
     try:
         print(f"\nTrying to open serial port {port_to_use} at {baudrate} baud...")
@@ -242,12 +246,14 @@ def send_cifar100_images(num_images=None, use_test_set=None,
         
         # Try to auto-detect MAX78000
         print("\nAttempting to auto-detect MAX78000...")
-        for port in serial.tools.list_ports.comports():
-            if "USB Serial" in port.description or "MAXIM" in port.description.upper() or "MAX78000" in port.description.upper():
+        for port_info in serial.tools.list_ports.comports():
+            if ("USB Serial" in port_info.description or 
+                "MAXIM" in port_info.description.upper() or 
+                "MAX78000" in port_info.description.upper()):
                 try:
-                    print(f"  Trying {port.device}...")
+                    print(f"  Trying {port_info.device}...")
                     ser = serial.Serial(
-                        port=port.device,
+                        port=port_info.device,
                         baudrate=baudrate,
                         bytesize=serial.EIGHTBITS,
                         parity=serial.PARITY_NONE,
@@ -255,8 +261,8 @@ def send_cifar100_images(num_images=None, use_test_set=None,
                         timeout=timeout,
                         write_timeout=timeout
                     )
-                    port_to_use = port.device
-                    print(f"  ✓ Successfully opened {port.device}")
+                    port_to_use = port_info.device
+                    print(f"  ✓ Successfully opened {port_info.device}")
                     break
                 except:
                     continue
@@ -268,15 +274,70 @@ def send_cifar100_images(num_images=None, use_test_set=None,
             print("2. Close any serial monitors (PuTTY, TeraTerm, VS Code Serial Monitor)")
             print("3. Drivers are installed correctly")
             print("4. Try unplugging and replugging the device")
-            return False
+            return None, None
     
     if ser is None:
-        return False
+        return None, None
     
     # Successfully opened port
     print(f"Serial port opened successfully")
     print(f"Port: {ser.name}")
     print(f"Baud rate: {ser.baudrate}")
+    
+    return ser, port_to_use
+
+
+def send_cifar100_images(num_images=None, use_test_set=None,
+                         serial_port=None, baudrate=None, timeout=None,
+                         act_mode_8bit=None, use_chw=None):
+    """
+    Main function to send CIFAR-100 images via UART
+    
+    Args:
+        num_images: number of images to send
+        use_test_set: if True, use test set; otherwise use training set
+        serial_port: COM port to use
+        baudrate: baud rate for serial communication
+        timeout: timeout in seconds
+        act_mode_8bit: if True, use 8-bit mode; if False, use float mode
+        use_chw: if True, convert to CHW format; if False, keep HWC format
+    """
+    # Use global defaults if not specified
+    if num_images is None:
+        num_images = NUM_IMAGES
+    if use_test_set is None:
+        use_test_set = USE_TEST_SET
+    if serial_port is None:
+        serial_port = SERIAL_PORT
+    if baudrate is None:
+        baudrate = BAUD_RATE
+    if timeout is None:
+        timeout = TIMEOUT
+    if act_mode_8bit is None:
+        act_mode_8bit = ACT_MODE_8BIT
+    if use_chw is None:
+        use_chw = USE_CHW_FORMAT
+    
+    print("="*70)
+    print("CIFAR-100 to MAX78000 UART Sender")
+    print("="*70)
+    print(f"Configuration:")
+    print(f"  - Number of images: {num_images}")
+    print(f"  - Dataset: {'Test' if use_test_set else 'Training'} set")
+    print(f"  - Image size: {IMAGE_SIZE}x{IMAGE_SIZE}")
+    print(f"  - Bytes per image: {BYTES_PER_IMAGE} bytes")
+    print(f"  - Serial port: {serial_port}")
+    print(f"  - Baud rate: {baudrate}")
+    print(f"  - Normalization: {'8-bit [-128, 127]' if act_mode_8bit else 'Float [-1, 1]'}")
+    print(f"  - Data format: {'CHW (Channels,Height,Width)' if use_chw else 'HWC (Height,Width,Channels)'}")
+    
+    # Load images
+    images, labels = load_cifar100_images(num_images, use_test_set)
+    
+    # Open serial port
+    ser, port_name = open_serial_port(serial_port, baudrate, timeout)
+    if ser is None:
+        return False
     
     # Wait for device to be ready
     time.sleep(2)
@@ -286,15 +347,15 @@ def send_cifar100_images(num_images=None, use_test_set=None,
     ser.reset_output_buffer()
     
     # Send images
-    print(f"\nSending {num_images} images...")
+    print(f"\nSending {num_images} images...\n")
     success_count = 0
     fail_count = 0
     
     start_time = time.time()
     
     for idx in tqdm(range(num_images), desc="Sending images"):
-        # Preprocess image with current format settings
-        image_data = preprocess_image_for_cnn(images[idx], use_chw=use_chw, act_mode_8bit=act_mode_8bit)
+        # Preprocess image with normalization and format conversion
+        image_data = preprocess_image_for_cnn(images[idx], act_mode_8bit, use_chw)
         
         # Send image
         if send_image_via_uart(ser, image_data, idx, labels[idx]):
@@ -303,22 +364,25 @@ def send_cifar100_images(num_images=None, use_test_set=None,
             fail_count += 1
             print(f"\nFailed to send image {idx}")
         
-        # Small delay between images to prevent buffer overflow
-        time.sleep(0.5)  # 500ms delay to prevent packet loss
+        # Small additional delay to ensure device is ready for next packet
+        time.sleep(0.2)  # 200ms extra margin
     
     end_time = time.time()
     elapsed_time = end_time - start_time
     
     # Statistics
-    print("\n" + "="*60)
-    print("Transmission Complete")
-    print("="*60)
-    print(f"Total images sent: {success_count}/{num_images}")
-    print(f"Failed transmissions: {fail_count}")
-    print(f"Total time: {elapsed_time:.2f} seconds")
-    print(f"Average time per image: {elapsed_time/num_images*1000:.2f} ms")
-    print(f"Throughput: {num_images/elapsed_time:.2f} images/second")
-    print(f"Data rate: {(BYTES_PER_IMAGE*num_images)/(elapsed_time*1024):.2f} KB/s")
+    print("\n" + "="*70)
+    print("BENCHMARK RESULTS - TRANSMISSION STATISTICS")
+    print("="*70)
+    print(f"Image size:               {IMAGE_SIZE}x{IMAGE_SIZE}x{NUM_CHANNELS}")
+    print(f"Total images sent:        {success_count}/{num_images}")
+    print(f"Failed transmissions:     {fail_count}")
+    print(f"Total time:               {elapsed_time:.2f} seconds ({elapsed_time/60:.2f} minutes)")
+    print(f"Average time per image:   {elapsed_time/num_images:.2f} seconds ({elapsed_time/num_images*1000:.2f} ms)")
+    print(f"Transmission throughput:  {num_images/elapsed_time:.2f} images/second")
+    print(f"Data rate:                {(BYTES_PER_IMAGE*num_images)/(elapsed_time*1024):.2f} KB/s")
+    print(f"Total data transmitted:   {(BYTES_PER_IMAGE*num_images)/1024:.2f} KB ({(BYTES_PER_IMAGE*num_images)/(1024*1024):.3f} MB)")
+    print("="*70)
     
     # Close serial port
     ser.close()
@@ -332,40 +396,39 @@ def main():
     Main entry point with command line arguments
     """
     parser = argparse.ArgumentParser(description='Send CIFAR-100 images to MAX78000 via UART')
-    parser.add_argument('--num-images', type=int,
+    parser.add_argument('--num-images', type=int, default=None,
                         help=f'Number of images to send (default: {NUM_IMAGES})')
     parser.add_argument('--train-set', action='store_true',
                         help='Use training set instead of test set')
-    parser.add_argument('--port', type=str,
+    parser.add_argument('--port', type=str, default=None,
                         help=f'Serial port to use (default: {SERIAL_PORT})')
-    parser.add_argument('--baudrate', type=int,
+    parser.add_argument('--baudrate', type=int, default=None,
                         help=f'Baud rate (default: {BAUD_RATE})')
-    parser.add_argument('--timeout', type=int,
+    parser.add_argument('--timeout', type=int, default=None,
                         help=f'Serial timeout in seconds (default: {TIMEOUT})')
-    parser.add_argument('--hwc', action='store_true',
-                        help='Use HWC format instead of CHW (for testing)')
     parser.add_argument('--float-mode', action='store_true',
-                        help='Use float mode [-1,1) instead of int8 [-128,127]')
+                        help='Use float normalization [-1, 1] instead of 8-bit [-128, 127]')
+    parser.add_argument('--hwc', action='store_true',
+                        help='Use HWC (Height,Width,Channels) format instead of CHW (Channels,Height,Width)')
     
     args = parser.parse_args()
     
     print("Required packages: pyserial, tensorflow, numpy, tqdm")
     print("Install with: pip install pyserial tensorflow numpy tqdm\n")
     
-    # Determine format and mode from arguments
-    # CIFAR-100 models use HWC format by default (verified from cnn.c: "Input data: HWC")
-    # Use --hwc flag only for testing/debugging with models that explicitly need HWC
-    use_chw = False  # Default to HWC (Height, Width, Channels)
-    act_mode_8bit = not args.float_mode  # Default is 8-bit unless --float-mode is specified
+    # Determine format settings
+    # Default is CHW format (USE_CHW_FORMAT = True)
+    use_chw = not args.hwc  # True (CHW) unless --hwc flag is set
+    act_mode_8bit = not args.float_mode  # True (8-bit) unless --float-mode flag is set
     
     success = send_cifar100_images(
         num_images=args.num_images,
-        use_test_set=not args.train_set,
+        use_test_set=not args.train_set,  # True (test set) unless --train-set flag is set
         serial_port=args.port,
         baudrate=args.baudrate,
         timeout=args.timeout,
-        use_chw=use_chw,
-        act_mode_8bit=act_mode_8bit
+        act_mode_8bit=act_mode_8bit,
+        use_chw=use_chw
     )
     
     if success:

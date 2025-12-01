@@ -6,7 +6,7 @@
 **************************************************************************************************/
 
 /*
- * This header file was automatically @generated for the my_cifar100 network from a template.
+ * This header file was automatically @generated for the my_cifar100_simplenet network from a template.
  * Please do not edit; instead, edit the template and regenerate.
  */
 
