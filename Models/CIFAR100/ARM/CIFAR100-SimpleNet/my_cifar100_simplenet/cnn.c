@@ -174,10 +174,6 @@ int cnn_configure(void)
   *((volatile uint32_t *) 0x50100a10) = 0x00007800; // Layer control 2
   *((volatile uint32_t *) 0x50100610) = 0x0c600cd8; // Mask offset and count
   *((volatile uint32_t *) 0x50100690) = 0x0000001f; // TRAM ptr max
-<<<<<<< HEAD:Models/CIFAR100/CIFAR100-simplenet/my_cifar100/cnn.c
-  *((volatile uint32_t *) 0x50100790) = 0x00002000; // Post processing register
-=======
->>>>>>> origin/main:Models/CIFAR100/ARM/CIFAR100-SimpleNet/my_cifar100_simplenet/cnn.c
   *((volatile uint32_t *) 0x50100710) = 0x01110111; // Mask and processor enables
 
   // Layer 0 quadrant 1

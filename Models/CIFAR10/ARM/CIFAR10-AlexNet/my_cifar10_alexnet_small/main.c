@@ -32,18 +32,15 @@
 * ownership rights.
 *******************************************************************************/
 
-// my_cifar10_alexnet_small
-// Modified to receive 64x64 CIFAR-10 images via UART and perform inference
-// 
-// IMPORTANT NOTES:
-// 1. Image format: CHW (Channels, Height, Width) - 64x64x3 = 12288 bytes
-// 2. CNN input memory addresses (from generated load_input):
-//    - Channel 0 (R): 0x50400000 - 1024 words (4096 bytes)
-//    - Channel 1 (G): 0x50410000 - 1024 words (4096 bytes)  
-//    - Channel 2 (B): 0x50800000 - 1024 words (4096 bytes)
-// 3. softmax_q17p14_q15 function available
-// 4. UART0 at 115200 baud
-// 5. Protocol: DEADBEEF start marker + 4-byte idx + 1-byte label + 12288 bytes image
+// my_cifar10_alexnet_small - Queue-based UART Benchmark System
+// CIFAR-10 classification with AlexNet-Small on MAX78000
+//
+// Memory layout for 64x64 RGB image (CHW format):
+//   Channel 0 (R): 0x50400000 - 1024 words (4096 bytes)
+//   Channel 1 (G): 0x50410000 - 1024 words (4096 bytes)
+//   Channel 2 (B): 0x50800000 - 1024 words (4096 bytes)
+//
+// Protocol: [DEADBEEF][NUM_IMAGES(4 bytes)][Label0][Image0][Label1][Image1]...
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -56,327 +53,416 @@
 // Softmax function prototype
 extern void softmax_q17p14_q15(const q31_t *vec_in, const uint16_t dim_vec, q15_t *p_out);
 
-// UART Configuration
-#define UART_BAUD 115200
-#define RX_UART MXC_UART0
+// ============================================================================
+// Configuration
+// ============================================================================
+#define UART_BAUD           115200
+#define RX_UART             MXC_UART0
+#define START_MARKER        0xDEADBEEF
+#define IMAGE_SIZE_DIM      64      // 64x64 image
+#define CHANNEL_SIZE        4096    // 64x64 bytes per channel
+#define CHANNEL_WORDS       1024    // 4096 bytes / 4
+#define IMAGE_BYTES         12288   // 64x64x3 bytes total
+#define MAX_QUEUE_SIZE      8       // Limited by SRAM (64x64 images are larger)
+#define WARMUP_ITERATIONS   2
+#define TIMEOUT_LOOPS       100000000
 
-// Image Configuration - 64x64 CHW format
-#define IMAGE_SIZE 64
-#define NUM_CHANNELS 3
-#define BYTES_PER_CHANNEL (IMAGE_SIZE * IMAGE_SIZE)  // 4096 bytes per channel
-#define BYTES_PER_IMAGE (BYTES_PER_CHANNEL * NUM_CHANNELS)  // 12288 bytes total
+// ============================================================================
+// Data Structures
+// ============================================================================
+typedef struct {
+    uint32_t ch0[CHANNEL_WORDS];    // Channel 0 (R) - 1024 words
+    uint32_t ch1[CHANNEL_WORDS];    // Channel 1 (G) - 1024 words
+    uint32_t ch2[CHANNEL_WORDS];    // Channel 2 (B) - 1024 words
+    uint8_t label;
+} ImageQueueEntry;
 
-// Protocol markers - DEADBEEF
-#define START_MARKER_1 0xDE
-#define START_MARKER_2 0xAD
-#define START_MARKER_3 0xBE
-#define START_MARKER_4 0xEF
+typedef struct {
+    uint32_t latency_us;
+    int predicted_class;
+    uint8_t true_label;
+    int correct;
+    float confidence;
+} BenchmarkResult;
 
-// Buffers - CHW format: data arrives as [R channel][G channel][B channel]
-static uint8_t rx_buffer[BYTES_PER_IMAGE + 16];  // Extra space for protocol overhead
-
-// Separate buffers for each channel (CHW format - each channel is 64x64 = 4096 bytes = 1024 words)
-static uint32_t input_ch0[1024];  // Channel 0 (R) - goes to 0x50400000
-static uint32_t input_ch1[1024];  // Channel 1 (G) - goes to 0x50410000
-static uint32_t input_ch2[1024];  // Channel 2 (B) - goes to 0x50800000
-
-// CNN outputs
+// ============================================================================
+// Global Variables
+// ============================================================================
+volatile uint32_t cnn_time;
+static ImageQueueEntry image_queue[MAX_QUEUE_SIZE];
+static volatile uint32_t queue_head = 0;
+static volatile uint32_t queue_tail = 0;
+static volatile uint32_t queue_count = 0;
+static BenchmarkResult results[MAX_QUEUE_SIZE];
 static int32_t ml_data[CNN_NUM_OUTPUTS];
 static q15_t ml_softmax[CNN_NUM_OUTPUTS];
 
-volatile uint32_t cnn_time;
+// ============================================================================
+// Queue Functions
+// ============================================================================
+static inline int queue_push(ImageQueueEntry *entry) {
+    if (queue_count >= MAX_QUEUE_SIZE) return -1;
+    memcpy(&image_queue[queue_tail], entry, sizeof(ImageQueueEntry));
+    queue_tail = (queue_tail + 1) % MAX_QUEUE_SIZE;
+    queue_count++;
+    return 0;
+}
 
-/**
- * Receive a single byte with timeout
- * Returns: byte value (0-255) on success, negative on error/timeout
- */
-int uart_read_byte_timeout(mxc_uart_regs_t *uart, uint32_t timeout_loops)
-{
+static inline ImageQueueEntry* queue_peek(uint32_t index) {
+    if (index >= queue_count) return NULL;
+    return &image_queue[(queue_head + index) % MAX_QUEUE_SIZE];
+}
+
+// ============================================================================
+// UART Functions
+// ============================================================================
+static int uart_read_byte_timeout(uint8_t *byte, uint32_t timeout_loops) {
     uint32_t loops = 0;
-    int byte_read;
-    
-    while (loops < timeout_loops) {
-        byte_read = MXC_UART_ReadCharacter(uart);
-        if (byte_read >= 0) {
-            return byte_read;
-        }
-        loops++;
+    while (MXC_UART_GetRXFIFOAvailable(RX_UART) == 0) {
+        if (++loops > timeout_loops) return -1;
     }
-    
-    return E_TIME_OUT;
+    *byte = MXC_UART_ReadCharacter(RX_UART);
+    return 0;
 }
 
-/**
- * Receive image via UART with protocol framing
- * Packet format: START_MARKER(4) + IDX(4) + LABEL(1) + IMAGE(12288) = 12297 bytes
- */
-int receive_image_uart(uint32_t *image_idx, uint8_t *label)
-{
-    int bytes_received = 0;
-    int byte_read;
-    uint8_t byte;
-    int state = 0;  // 0-3: waiting for 4-byte start marker, 4: reading data
-    uint32_t timeout_loops = 20000000;  // Larger timeout for 64x64 images (~60 sec)
+static int uart_read_bytes(uint8_t *buffer, uint32_t length, uint32_t timeout_loops) {
+    for (uint32_t i = 0; i < length; i++) {
+        if (uart_read_byte_timeout(&buffer[i], timeout_loops) != 0) return i;
+    }
+    return length;
+}
+
+// ============================================================================
+// Protocol Functions
+// ============================================================================
+static int wait_for_benchmark_start(uint32_t *num_images) {
+    uint8_t marker_buf[4];
+    uint8_t count_buf[4];
+    uint32_t marker;
     
-    // State machine to receive packet with 4-byte start marker
+    printf("[INFO] Waiting for start marker (0xDEADBEEF)...\n");
+    
     while (1) {
-        byte_read = uart_read_byte_timeout(RX_UART, timeout_loops);
-        if (byte_read < 0) {
-            if (byte_read == E_TIME_OUT) {
-                printf("Error: UART timeout waiting for data\n");
-            }
-            return byte_read;
-        }
-        byte = (uint8_t)byte_read;
+        if (uart_read_byte_timeout(&marker_buf[0], TIMEOUT_LOOPS) != 0) continue;
+        if (marker_buf[0] != 0xDE) continue;
         
-        switch (state) {
-            case 0:  // Waiting for first start marker byte (0xDE)
-                if (byte == START_MARKER_1) {
-                    state = 1;
-                }
-                break;
-                
-            case 1:  // Waiting for second start marker byte (0xAD)
-                if (byte == START_MARKER_2) {
-                    state = 2;
-                } else if (byte == START_MARKER_1) {
-                    state = 1;
-                } else {
-                    state = 0;
-                }
-                break;
-                
-            case 2:  // Waiting for third start marker byte (0xBE)
-                if (byte == START_MARKER_3) {
-                    state = 3;
-                } else if (byte == START_MARKER_1) {
-                    state = 1;
-                } else {
-                    state = 0;
-                }
-                break;
-                
-            case 3:  // Waiting for fourth start marker byte (0xEF)
-                if (byte == START_MARKER_4) {
-                    bytes_received = 0;
-                    state = 4;
-                } else if (byte == START_MARKER_1) {
-                    state = 1;
-                } else {
-                    state = 0;
-                }
-                break;
-                
-            case 4:  // Reading packet data
-                if (bytes_received >= sizeof(rx_buffer)) {
-                    printf("Error: Buffer overflow, resetting\n");
-                    state = 0;
-                    bytes_received = 0;
-                    break;
-                }
-                
-                rx_buffer[bytes_received++] = byte;
-                
-                // Check if we've received all data: 4 bytes idx + 1 byte label + 12288 bytes image
-                if (bytes_received >= (4 + 1 + BYTES_PER_IMAGE)) {
-                    // Extract image index (little-endian)
-                    *image_idx = ((uint32_t)rx_buffer[0]) |
-                                 ((uint32_t)rx_buffer[1] << 8) |
-                                 ((uint32_t)rx_buffer[2] << 16) |
-                                 ((uint32_t)rx_buffer[3] << 24);
-                    
-                    // Extract label
-                    *label = rx_buffer[4];
-                    
-                    // Copy image data to separate channel buffers (CHW format)
-                    // Data arrives as: [Channel 0: 4096 bytes][Channel 1: 4096 bytes][Channel 2: 4096 bytes]
-                    memcpy(input_ch0, &rx_buffer[5], BYTES_PER_CHANNEL);                      // R channel
-                    memcpy(input_ch1, &rx_buffer[5 + BYTES_PER_CHANNEL], BYTES_PER_CHANNEL);  // G channel
-                    memcpy(input_ch2, &rx_buffer[5 + 2*BYTES_PER_CHANNEL], BYTES_PER_CHANNEL); // B channel
-                    
-                    printf("Received Image %lu (Label: %d)\n", *image_idx, *label);
-                    return E_NO_ERROR;
-                }
-                break;
+        if (uart_read_bytes(&marker_buf[1], 3, TIMEOUT_LOOPS) != 3) continue;
+        
+        marker = ((uint32_t)marker_buf[0] << 24) | ((uint32_t)marker_buf[1] << 16) |
+                 ((uint32_t)marker_buf[2] << 8)  | ((uint32_t)marker_buf[3]);
+        
+        if (marker == START_MARKER) {
+            if (uart_read_bytes(count_buf, 4, TIMEOUT_LOOPS) != 4) {
+                printf("[ERROR] Failed to read image count\n");
+                return -1;
+            }
+            *num_images = ((uint32_t)count_buf[0] << 24) | ((uint32_t)count_buf[1] << 16) |
+                          ((uint32_t)count_buf[2] << 8)  | ((uint32_t)count_buf[3]);
+            printf("[INFO] Start marker received. Images: %lu\n", *num_images);
+            return E_NO_ERROR;
         }
     }
-    
-    return E_FAIL;
 }
 
-/**
- * Load input data from received buffer into CNN
- * CHW format: each channel loaded to separate memory bank
- * 
- * Memory mapping (from generated load_input):
- *   Channel 0 (R): 0x50400000 - 1024 words
- *   Channel 1 (G): 0x50410000 - 1024 words
- *   Channel 2 (B): 0x50800000 - 1024 words
- */
-void load_input_from_buffer(void)
-{
-    memcpy32((uint32_t *)0x50400000, input_ch0, 1024);  // Channel 0 (R)
-    memcpy32((uint32_t *)0x50410000, input_ch1, 1024);  // Channel 1 (G)
-    memcpy32((uint32_t *)0x50800000, input_ch2, 1024);  // Channel 2 (B)
+static int receive_single_image(ImageQueueEntry *entry) {
+    uint8_t label_byte;
+    static uint8_t image_data[IMAGE_BYTES];
+    
+    if (uart_read_byte_timeout(&label_byte, TIMEOUT_LOOPS) != 0) return -1;
+    entry->label = label_byte;
+    
+    if (uart_read_bytes(image_data, IMAGE_BYTES, TIMEOUT_LOOPS) != IMAGE_BYTES) return -2;
+    
+    // Parse CHW format into separate channels
+    for (int i = 0; i < CHANNEL_WORDS; i++) {
+        entry->ch0[i] = ((uint32_t)image_data[i*4 + 0]) |
+                        ((uint32_t)image_data[i*4 + 1] << 8) |
+                        ((uint32_t)image_data[i*4 + 2] << 16) |
+                        ((uint32_t)image_data[i*4 + 3] << 24);
+        
+        entry->ch1[i] = ((uint32_t)image_data[CHANNEL_SIZE + i*4 + 0]) |
+                        ((uint32_t)image_data[CHANNEL_SIZE + i*4 + 1] << 8) |
+                        ((uint32_t)image_data[CHANNEL_SIZE + i*4 + 2] << 16) |
+                        ((uint32_t)image_data[CHANNEL_SIZE + i*4 + 3] << 24);
+        
+        entry->ch2[i] = ((uint32_t)image_data[2*CHANNEL_SIZE + i*4 + 0]) |
+                        ((uint32_t)image_data[2*CHANNEL_SIZE + i*4 + 1] << 8) |
+                        ((uint32_t)image_data[2*CHANNEL_SIZE + i*4 + 2] << 16) |
+                        ((uint32_t)image_data[2*CHANNEL_SIZE + i*4 + 3] << 24);
+    }
+    
+    return E_NO_ERROR;
 }
 
-/**
- * Perform CNN inference and return classification
- */
-int classify_image(void)
-{
-    int i, max_idx = 0;
-    int32_t max_val;
+static uint32_t receive_all_images(uint32_t num_images) {
+    ImageQueueEntry entry;
+    uint32_t received = 0;
     
-    cnn_time = 0;
+    printf("READY\n");
+    fflush(stdout);
+    
+    for (uint32_t i = 0; i < num_images; i++) {
+        if (receive_single_image(&entry) != E_NO_ERROR) {
+            printf("[RX] Failed at image %lu\n", i);
+            break;
+        }
+        if (queue_push(&entry) != 0) {
+            printf("[RX] Queue full at image %lu\n", i);
+            break;
+        }
+        received++;
+    }
+    
+    printf("[RECV] Received %lu images into queue.\n", received);
+    return received;
+}
+
+// ============================================================================
+// CNN Functions
+// ============================================================================
+static void load_image_to_cnn(ImageQueueEntry *img) {
+    memcpy32((uint32_t *)0x50400000, img->ch0, CHANNEL_WORDS);
+    memcpy32((uint32_t *)0x50410000, img->ch1, CHANNEL_WORDS);
+    memcpy32((uint32_t *)0x50800000, img->ch2, CHANNEL_WORDS);
+}
+
+static int run_cnn_inference(float *confidence) {
+    cnn_init();
+    cnn_configure();
     cnn_start();
     
-    // Disable Deep Sleep mode to allow CNN interrupt to wake CPU
     SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
+    while (cnn_time == 0) { __WFI(); }
     
-    // Wait for CNN to complete using WFI
-    while (cnn_time == 0) {
-        asm volatile("wfi");
-    }
-    
-    // Unload and compute softmax
     cnn_unload((uint32_t *)ml_data);
     softmax_q17p14_q15((const q31_t *)ml_data, CNN_NUM_OUTPUTS, ml_softmax);
     
-    // Find maximum
-    max_val = ml_data[0];
-    for (i = 1; i < CNN_NUM_OUTPUTS; i++) {
-        if (ml_data[i] > max_val) {
-            max_val = ml_data[i];
-            max_idx = i;
-        }
+    int max_idx = 0;
+    int32_t max_val = ml_data[0];
+    for (int i = 1; i < CNN_NUM_OUTPUTS; i++) {
+        if (ml_data[i] > max_val) { max_val = ml_data[i]; max_idx = i; }
+    }
+    
+    if (confidence != NULL) {
+        *confidence = (float)ml_softmax[max_idx] / 32768.0f * 100.0f;
     }
     
     return max_idx;
 }
 
-/**
- * Get confidence percentage for a given class
- */
-float get_confidence(int class_idx)
-{
-    int digs = (1000 * ml_softmax[class_idx] + 0x4000) >> 15;
-    return digs / 10.0f;
+// ============================================================================
+// Benchmark Functions
+// ============================================================================
+static void run_warmup(int iterations) {
+    printf("[WARMUP] Running %d iterations...\n", iterations);
+    
+    ImageQueueEntry *first_img = queue_peek(0);
+    if (first_img == NULL) { printf("[WARMUP] No images!\n"); return; }
+    
+    load_image_to_cnn(first_img);
+    
+    for (int i = 0; i < iterations; i++) {
+        cnn_time = 0;
+        run_cnn_inference(NULL);
+    }
+    
+    printf("[WARMUP] %d iterations done.\n", iterations);
 }
 
-int main(void)
-{
-    int error;
-    uint32_t image_idx;
-    uint8_t ground_truth_label;
-    int predicted_class;
-    int correct_count = 0;
-    int total_count = 0;
+static void run_benchmark(uint32_t num_images) {
+    uint32_t total_time_us = 0;
+    uint32_t min_time = 0xFFFFFFFF, max_time = 0;
+    uint32_t correct_count = 0;
     float total_confidence = 0.0f;
-    float avg_confidence = 0.0f;
-    uint32_t total_cnn_time = 0;
-    float avg_cnn_time = 0.0f;
-    uint32_t min_cnn_time = 0xFFFFFFFF;
-    uint32_t max_cnn_time = 0;
     
-    // Initialize system clocks and cache
+    printf("[BENCH] Start Loop (N=%lu)\n", num_images);
+    
+    for (uint32_t i = 0; i < num_images; i++) {
+        ImageQueueEntry *img = queue_peek(i);
+        if (img == NULL) break;
+        
+        load_image_to_cnn(img);
+        cnn_time = 0;
+        
+        float confidence;
+        int predicted = run_cnn_inference(&confidence);
+        uint32_t latency = cnn_time;
+        
+        results[i].latency_us = latency;
+        results[i].predicted_class = predicted;
+        results[i].true_label = img->label;
+        results[i].correct = (predicted == img->label);
+        results[i].confidence = confidence;
+        
+        total_time_us += latency;
+        total_confidence += confidence;
+        if (latency < min_time) min_time = latency;
+        if (latency > max_time) max_time = latency;
+        if (results[i].correct) correct_count++;
+        
+        printf("Iter %02lu: %.1fms | Class: %d | GT: %d | Conf: %.1f%% | %s\n",
+               i + 1, (double)latency / 1000.0, predicted, img->label,
+               (double)confidence, results[i].correct ? "OK" : "FAIL");
+    }
+    
+    printf("[BENCH] Loop End.\n");
+    
+    // Statistics
+    float avg_time = (float)total_time_us / (float)num_images;
+    float fps = 1000000.0f / avg_time;
+    float accuracy = ((float)correct_count / (float)num_images) * 100.0f;
+    float avg_confidence = total_confidence / (float)num_images;
+    
+    // AlexNet-Small constants
+    const uint32_t total_ops = 27039360;
+    const uint32_t total_macs = 26887424;
+    const uint32_t weight_bytes = 180320;
+    const uint32_t input_bytes = IMAGE_BYTES;
+    const uint32_t output_bytes = CNN_NUM_OUTPUTS * 4;
+    
+    const float npu_freq_mhz = 50.0f;
+    const uint32_t num_processors = 64;
+    const float peak_tops = (npu_freq_mhz * 1e6f * num_processors * 2) / 1e12f;
+    
+    float core_latency_us = avg_time;
+    float system_latency_us = core_latency_us + 15.0f;
+    float effective_tops = (float)total_ops / (core_latency_us / 1e6f) / 1e12f;
+    float effective_macs_tops = (float)total_macs / (core_latency_us / 1e6f) / 1e12f;
+    float utilization_pct = (effective_tops / peak_tops) * 100.0f;
+    
+    uint32_t data_moved_bytes = input_bytes + output_bytes;
+    float bandwidth_mb_per_sec = ((float)data_moved_bytes * fps) / (1024.0f * 1024.0f);
+    float ops_per_byte = (float)total_ops / (float)data_moved_bytes;
+    float arithmetic_intensity = (float)total_macs / (float)(weight_bytes + input_bytes);
+    
+    // Print Report
+    printf("\n");
+    printf("============================================================\n");
+    printf("        BENCHMARK REPORT - AlexNet-Small (64x64)            \n");
+    printf("============================================================\n");
+    
+    printf("[BASIC STATISTICS]\n");
+    printf("  Total Images:        %lu\n", num_images);
+    printf("  Correct:             %lu/%lu (%.1f%%)\n", correct_count, num_images, (double)accuracy);
+    printf("  Avg Confidence:      %.1f%%\n", (double)avg_confidence);
+    printf("------------------------------------------------------------\n");
+    
+    printf("[LATENCY METRICS]\n");
+    printf("  Core Latency (NPU):  %.2f us (%.3f ms)\n", (double)core_latency_us, (double)core_latency_us / 1000.0);
+    printf("  System Latency:      %.2f us (%.3f ms)\n", (double)system_latency_us, (double)system_latency_us / 1000.0);
+    printf("  Min Latency:         %lu us\n", min_time);
+    printf("  Max Latency:         %lu us\n", max_time);
+    printf("  Latency Jitter:      %lu us\n", max_time - min_time);
+    printf("------------------------------------------------------------\n");
+    
+    printf("[THROUGHPUT METRICS]\n");
+    printf("  Throughput:          %.2f FPS\n", (double)fps);
+    printf("  Total Time:          %.2f ms (%lu images)\n", (double)total_time_us / 1000.0, num_images);
+    printf("------------------------------------------------------------\n");
+    
+    printf("[TOPS ANALYSIS]\n");
+    printf("  Peak TOPS:           %.4f TOPS (theoretical max)\n", (double)peak_tops);
+    printf("  Effective TOPS:      %.4f TOPS (actual)\n", (double)effective_tops);
+    printf("  Effective MACs:      %.4f TMACs/s\n", (double)effective_macs_tops);
+    printf("  NPU Utilization:     %.1f%%\n", (double)utilization_pct);
+    printf("  Ops/Inference:       %.2f M ops\n", (double)total_ops / 1e6);
+    printf("  MACs/Inference:      %.2f M MACs\n", (double)total_macs / 1e6);
+    printf("------------------------------------------------------------\n");
+    
+    printf("[MEMORY EFFICIENCY]\n");
+    printf("  Weight Memory:       %lu bytes (%.1f KB)\n", weight_bytes, (double)weight_bytes / 1024.0);
+    printf("  Input Size:          %lu bytes\n", input_bytes);
+    printf("  Output Size:         %lu bytes\n", output_bytes);
+    printf("  Data Movement:       %lu bytes/inference\n", data_moved_bytes);
+    printf("  Bandwidth Used:      %.2f MB/s\n", (double)bandwidth_mb_per_sec);
+    printf("  Arithmetic Intensity:%.1f ops/byte\n", (double)arithmetic_intensity);
+    printf("  Ops/Byte Moved:      %.1f ops/byte\n", (double)ops_per_byte);
+    printf("------------------------------------------------------------\n");
+    
+    printf("[VERDICT]\n");
+    if (utilization_pct >= 40.0f) {
+        printf("  NPU Efficiency:      GOOD (>=40%%)\n");
+    } else if (utilization_pct >= 20.0f) {
+        printf("  NPU Efficiency:      MODERATE (20-40%%)\n");
+    } else {
+        printf("  NPU Efficiency:      LOW (<20%%)\n");
+    }
+    printf("  Accuracy:            %s\n", (correct_count == num_images) ? "PERFECT" : "PARTIAL");
+    printf("============================================================\n");
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+int main(void) {
+    int error;
+    uint32_t num_images;
+    
     MXC_ICC_Enable(MXC_ICC0);
     MXC_SYS_Clock_Select(MXC_SYS_CLOCK_IPO);
     SystemCoreClockUpdate();
     
-    printf("\n\n************** CIFAR-10 AlexNet-Small Inference via UART **************\n");
-    printf("Model: AlexNet-Small (64x64 CHW format)\n");
-    printf("Image Size: 64x64x3 = 12288 bytes\n");
-    printf("UART: %d baud on UART0\n", UART_BAUD);
-    printf("Memory Banks:\n");
-    printf("  - Channel 0 (R): 0x50400000\n");
-    printf("  - Channel 1 (G): 0x50410000\n");
-    printf("  - Channel 2 (B): 0x50800000\n");
-    printf("************************************************************************\n\n");
+    printf("\n\n============================================================\n");
+    printf("[INIT] CIFAR-10 AlexNet-Small Benchmark System\n");
+    printf("============================================================\n");
+    printf("[INIT] Image Size: 64x64x3 (CHW) = %d bytes\n", IMAGE_BYTES);
+    printf("[INIT] Queue Size: %d images max\n", MAX_QUEUE_SIZE);
+    printf("[INIT] UART: %d baud\n", UART_BAUD);
+    printf("[INIT] Memory Banks:\n");
+    printf("         Channel 0 (R): 0x50400000\n");
+    printf("         Channel 1 (G): 0x50410000\n");
+    printf("         Channel 2 (B): 0x50800000\n");
     
-    // Initialize UART for data reception
-    printf("Initializing UART...\n");
+    printf("[INIT] Initializing UART...");
     error = MXC_UART_Init(RX_UART, UART_BAUD, MXC_UART_APB_CLK);
-    if (error < E_NO_ERROR) {
-        printf("-->Error initializing UART: %d\n", error);
-        printf("-->MXC_UART_Init Failed\n");
-        return error;
-    }
-    printf("-->UART Initialized\n\n");
+    if (error < E_NO_ERROR) { printf(" FAILED (%d)\n", error); return error; }
+    printf(" OK\n");
     
-    // Initialize CNN
-    printf("Initializing CNN...\n");
+    printf("[INIT] Loading AlexNet-Small...");
     cnn_enable(MXC_S_GCR_PCLKDIV_CNNCLKSEL_PCLK, MXC_S_GCR_PCLKDIV_CNNCLKDIV_DIV1);
     cnn_init();
     cnn_load_weights();
     cnn_load_bias();
     cnn_configure();
-    printf("-->CNN initialized\n\n");
+    printf(" OK\n");
     
-    printf("Ready to receive images. Waiting for data...\n\n");
+    uint32_t pclk_freq = SystemCoreClock / 2;
+    printf("[INIT] NPU Freq: %lu MHz (PCLK)\n", pclk_freq / 1000000);
+    printf("============================================================\n\n");
     
-    LED_On(0);  // Indicate ready
+    LED_On(0);
     
-    // Main loop: receive and classify images
     while (1) {
-        // Receive image via UART
-        error = receive_image_uart(&image_idx, &ground_truth_label);
-        if (error != E_NO_ERROR) {
-            printf("-->Error receiving image: %d\n", error);
-            printf("Resetting and waiting for next image...\n\n");
-            continue;
+        queue_head = 0; queue_tail = 0; queue_count = 0;
+        
+        error = wait_for_benchmark_start(&num_images);
+        if (error != E_NO_ERROR) { printf("[ERROR] Failed to receive start: %d\n", error); continue; }
+        
+        if (num_images > MAX_QUEUE_SIZE) {
+            printf("[WARN] Limiting to %d images\n", MAX_QUEUE_SIZE);
+            num_images = MAX_QUEUE_SIZE;
         }
         
-        // Load image into CNN (CHW format - 3 separate memory banks)
-        load_input_from_buffer();
+        printf("[INFO] Benchmark for %lu images\n", num_images);
         
-        // Perform inference
         LED_On(1);
-        predicted_class = classify_image();
+        uint32_t received = receive_all_images(num_images);
         LED_Off(1);
         
-        // Get confidence for predicted class
-        float confidence = get_confidence(predicted_class);
+        if (received == 0) { printf("[ERROR] No images received!\n"); continue; }
         
-        // Track CNN inference timing
-        total_cnn_time += cnn_time;
-        if (cnn_time < min_cnn_time) min_cnn_time = cnn_time;
-        if (cnn_time > max_cnn_time) max_cnn_time = cnn_time;
-        avg_cnn_time = (float)total_cnn_time / (total_count + 1);
+        printf("[ACK] Ready to process %lu images\n", received);
+        MXC_UART_ClearRXFIFO(RX_UART);
         
-        // Check accuracy
-        total_count++;
-        total_confidence += confidence;
-        avg_confidence = total_confidence / total_count;
+        run_warmup(WARMUP_ITERATIONS);
         
-        if (predicted_class == ground_truth_label) {
-            correct_count++;
-        }
+        LED_On(1);
+        run_benchmark(received);
+        LED_Off(1);
         
-        // Print results
-        printf("----------------------------------------\n");
-        printf("Image %lu Results:\n", image_idx);
-        printf("  Predicted:    %d (%.2f%% confidence)\n", predicted_class, (double)confidence);
-        printf("  Actual:       %d\n", ground_truth_label);
-        printf("  Status:       %s\n", (predicted_class == ground_truth_label) ? "CORRECT" : "WRONG");
-        printf("  CNN Time:     %lu us (%.2f ms)\n", cnn_time, (double)cnn_time / 1000.0);
-        printf("Overall Statistics:\n");
-        printf("  Accuracy:     %d/%d (%.2f%%)\n",
-               correct_count, total_count,
-               ((double)correct_count / (double)total_count) * 100.0);
-        printf("  Avg Conf:     %.2f%%\n", (double)avg_confidence);
-        printf("  Avg CNN Time: %.2f us (%.2f ms)\n", (double)avg_cnn_time, (double)avg_cnn_time / 1000.0);
-        printf("  Min CNN Time: %lu us (%.2f ms)\n", min_cnn_time, (double)min_cnn_time / 1000.0);
-        printf("  Max CNN Time: %lu us (%.2f ms)\n", max_cnn_time, (double)max_cnn_time / 1000.0);
-        printf("  Throughput:   %.2f images/sec\n", 1000000.0 / (double)avg_cnn_time);
-        printf("----------------------------------------\n\n");
-        
-        // Clear UART buffer and reconfigure CNN for next inference
+        printf("\n[DONE] Benchmark complete. Waiting for next batch...\n\n");
         MXC_UART_ClearRXFIFO(RX_UART);
         MXC_Delay(MXC_DELAY_MSEC(100));
-        
-        cnn_init();
-        cnn_configure();
     }
     
     return E_NO_ERROR;

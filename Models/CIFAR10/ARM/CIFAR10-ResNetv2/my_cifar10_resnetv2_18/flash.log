@@ -11,6 +11,8 @@ Info : SWD DPIDR 0x2ba01477
 Info : [max32xxx.cpu] Cortex-M4 r0p1 processor detected
 Info : [max32xxx.cpu] target has 6 breakpoints, 4 watchpoints
 Info : starting gdb server for max32xxx.cpu on pipe
+[max32xxx.cpu] halted due to debug-request, current mode: Thread 
+xPSR: 0x210f0000 pc: 0x100041ba msp: 0x2001ff80
 Info : SWD DPIDR 0x2ba01477
 [max32xxx.cpu] halted due to debug-request, current mode: Thread 
 xPSR: 0x81000000 pc: 0x00002124 msp: 0x20003ff0
@@ -22,8 +24,7 @@ Warn : No RTOS could be auto-detected!
 Info : SWD DPIDR 0x2ba01477
 [max32xxx.cpu] halted due to debug-request, current mode: Thread 
 xPSR: 0x81000000 pc: 0x00002124 msp: 0x20003ff0
-Warn : keep_alive() was not invoked in the 1000 ms timelimit. GDB alive packet not sent! (1375 ms). Workaround: increase "set remotetimeout" in GDB
-Info : Padding image section 0 at 0x10039da8 with 8 bytes
+Warn : keep_alive() was not invoked in the 1000 ms timelimit. GDB alive packet not sent! (2022 ms). Workaround: increase "set remotetimeout" in GDB
 Info : SWD DPIDR 0x2ba01477
 [max32xxx.cpu] halted due to debug-request, current mode: Thread 
 xPSR: 0x81000000 pc: 0x00002124 msp: 0x20003ff0
