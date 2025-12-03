@@ -19,12 +19,12 @@ import argparse
 # ============================================================================
 SERIAL_PORT = 'COM6'        # Default COM port, will auto-detect if this fails
 BAUD_RATE = 115200          # Baud rate for serial communication
-NUM_IMAGES = 2              # Number of images to send (benchmark default)
+NUM_IMAGES = 8              # Number of images to send (benchmark default)
 USE_TEST_SET = True         # True = test set, False = training set
 TIMEOUT = 30                # Serial timeout in seconds (longer for batch processing)
 ACT_MODE_8BIT = True        # True = [-128, 127], False = [-128/128, 127/128]
 USE_CHW_FORMAT = True       # True = CHW (Channels,Height,Width), False = HWC (Height,Width,Channels)
-MAX_QUEUE_SIZE = 2          # Must match device MAX_QUEUE_SIZE (limited by SRAM for 64x64)
+MAX_QUEUE_SIZE = 8          # Must match device MAX_QUEUE_SIZE (limited by SRAM for 64x64)
 # ============================================================================
 
 # Image Configuration - Scaled up CIFAR-10 for AlexNet-Small

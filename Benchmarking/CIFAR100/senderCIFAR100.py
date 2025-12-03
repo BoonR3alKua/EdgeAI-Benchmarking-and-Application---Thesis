@@ -22,7 +22,7 @@ USE_TEST_SET = True         # True = test set, False = training set
 TIMEOUT = 30                # Serial timeout in seconds (longer for batch processing)
 ACT_MODE_8BIT = True        # True = [-128, 127], False = [-128/128, 127/128]
 USE_CHW_FORMAT = True       # True = CHW (Channels,Height,Width), False = HWC (Height,Width,Channels)
-MAX_QUEUE_SIZE = 10         # Must match device MAX_QUEUE_SIZE (limited by SRAM)
+MAX_QUEUE_SIZE = 30         # Must match device MAX_QUEUE_SIZE (limited by SRAM)
 # ============================================================================
 
 # Image Configuration (CIFAR-100 standard)

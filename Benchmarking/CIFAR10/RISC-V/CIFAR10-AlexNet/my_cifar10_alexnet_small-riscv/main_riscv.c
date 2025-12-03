@@ -56,13 +56,26 @@
 #define NUM_BENCHMARK_ITERATIONS 100
 
 // Network statistics (from cnn.h comments)
+// Hardware: 27,039,360 ops (26,887,424 macc; 147,840 comp; 4,096 add; 0 mul; 0 bitwise)
+// Weight memory: 180,320 bytes out of 442,368 bytes total (40.8%)
+// Bias memory:   682 bytes out of 2,048 bytes total (33.3%)
 #define TOTAL_OPS        27039360UL
 #define TOTAL_MACS       26887424UL
 #define WEIGHT_BYTES     180320UL
+#define BIAS_BYTES       682UL
 #define INPUT_BYTES      12288UL   // 3 channels * 64 * 64 = 12288 bytes
 #define OUTPUT_BYTES     40UL      // 10 outputs * 4 bytes = 40 bytes
 
 volatile uint32_t cnn_time; // Stopwatch
+
+// Timing measurement variables
+static uint32_t measured_load_input_time_us = 0;
+static uint32_t measured_init_time_us = 0;
+static uint32_t measured_load_weights_time_us = 0;
+static uint32_t measured_load_bias_time_us = 0;
+static uint32_t measured_configure_time_us = 0;
+static uint32_t measured_unload_time_us = 0;
+static uint32_t measured_softmax_time_us = 0;
 
 void fail(void)
 {
@@ -126,40 +139,97 @@ void softmax_layer(void)
   softmax_q17p14_q15((const q31_t *) ml_data, CNN_NUM_OUTPUTS, ml_softmax);
 }
 
+/**
+ * Measure overhead times using a calibration run
+ */
+void measure_overhead_times(void)
+{
+    // Measure load_input time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    load_input();
+    measured_load_input_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Measure cnn_init time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    cnn_init();
+    measured_init_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Measure cnn_load_weights time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    cnn_load_weights();
+    measured_load_weights_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Measure cnn_load_bias time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    cnn_load_bias();
+    measured_load_bias_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Measure cnn_configure time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    cnn_configure();
+    measured_configure_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Run inference to get valid output data for softmax measurement
+    cnn_time = 0;
+    cnn_start();
+    while (cnn_time == 0)
+        asm volatile("wfi");
+    
+    // Measure cnn_unload time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    cnn_unload((uint32_t *) ml_data);
+    measured_unload_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Measure softmax time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    softmax_q17p14_q15((const q31_t *) ml_data, CNN_NUM_OUTPUTS, ml_softmax);
+    measured_softmax_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    printf("[MEASURE] load_input: %lu us\n", measured_load_input_time_us);
+    printf("[MEASURE] cnn_init: %lu us\n", measured_init_time_us);
+    printf("[MEASURE] cnn_load_weights: %lu us\n", measured_load_weights_time_us);
+    printf("[MEASURE] cnn_load_bias: %lu us\n", measured_load_bias_time_us);
+    printf("[MEASURE] cnn_configure: %lu us\n", measured_configure_time_us);
+    printf("[MEASURE] cnn_unload: %lu us\n", measured_unload_time_us);
+    printf("[MEASURE] softmax: %lu us\n", measured_softmax_time_us);
+    fflush(stdout);
+}
+
 void print_benchmark_results(uint32_t total_time_us, uint32_t min_time, uint32_t max_time, 
                               uint32_t num_images, uint32_t core_latency_sum)
 {
     // All integer math - no 64-bit divisions! (RISC-V limitation)
     uint32_t core_latency_us = core_latency_sum / num_images;
-    uint32_t system_latency_us = core_latency_us + 15;  // ~15us overhead estimate
+    
+    // Measured overhead times
+    uint32_t total_overhead_us = measured_load_input_time_us + measured_init_time_us + 
+                                  measured_load_weights_time_us + measured_load_bias_time_us +
+                                  measured_configure_time_us + measured_unload_time_us + 
+                                  measured_softmax_time_us;
+    uint32_t system_latency_us = core_latency_us + total_overhead_us;
     
     // FPS calculation: fps = 1000000 / core_latency_us with 2 decimal places
     uint32_t fps_whole = 1000000 / core_latency_us;
     uint32_t fps_frac = ((1000000 % core_latency_us) * 100) / core_latency_us;
     
-    // TOPS calculation using realistic peak (same as ARM version)
-    // Peak = 50 MHz * 64 processors * 2 ops/cycle = 6.4 GOPS = 0.0064 TOPS
+    // MAX78000 NPU specs: 64 processors @ 50MHz, 9 MACs/cycle = 18 ops/cycle
+    // Peak TOPS = 50MHz * 64 * 18 = 57.6 GOPS = 0.0576 TOPS
     uint32_t gops_x10000 = (TOTAL_OPS / 100) / core_latency_us;  // TOPS * 10000
     uint32_t gmacs_x10000 = (TOTAL_MACS / 100) / core_latency_us;  // TMACs/s * 10000
     
-    // Utilization: gops_x10000 / 64 * 100 with 1 decimal
-    // util_x10 = gops_x10000 * 1000 / 64
-    uint32_t utilization_x10 = (gops_x10000 * 1000) / 64;  // percentage * 10
+    // Utilization: (effective_tops / 0.0576) * 100 = gops_x10000 / 576 * 100
+    uint32_t utilization_x10 = (gops_x10000 * 1000) / 576;  // percentage * 10
     
     // Memory efficiency calculations
     uint32_t data_moved_bytes = INPUT_BYTES + OUTPUT_BYTES;
-    // bandwidth = data_moved_bytes * fps / 1024 / 1024 (MB/s)
-    // To get 2 decimals: bw_x100 = data_moved_bytes * fps * 100 / 1048576
     uint32_t bandwidth_x100 = (data_moved_bytes * fps_whole * 100) / 1048576;
-    // ops_per_byte = TOTAL_OPS / data_moved_bytes with 1 decimal
     uint32_t ops_per_byte_x10 = (TOTAL_OPS * 10) / data_moved_bytes;
-    // arithmetic_intensity = TOTAL_MACS / (WEIGHT_BYTES + INPUT_BYTES) with 1 decimal
     uint32_t arith_intensity_x10 = (TOTAL_MACS * 10) / (WEIGHT_BYTES + INPUT_BYTES);
 
     // Print Report (matching ARM structure exactly)
     printf("\n");
     printf("============================================================\n");
-    printf("        BENCHMARK REPORT - AlexNet-Small (64x64)            \n");
+    printf("        BENCHMARK REPORT - AlexNet-Small (64x64) RISC-V     \n");
     printf("============================================================\n");
     
     printf("[BASIC STATISTICS]\n");
@@ -171,6 +241,15 @@ void print_benchmark_results(uint32_t total_time_us, uint32_t min_time, uint32_t
     printf("[LATENCY METRICS]\n");
     printf("  Core Latency (NPU):  %lu us (%lu.%03lu ms)\n", core_latency_us, core_latency_us/1000, core_latency_us%1000);
     printf("  System Latency:      %lu us (%lu.%03lu ms)\n", system_latency_us, system_latency_us/1000, system_latency_us%1000);
+    printf("  Overhead Breakdown (measured):\n");
+    printf("    - load_input:      %lu us\n", measured_load_input_time_us);
+    printf("    - cnn_init:        %lu us\n", measured_init_time_us);
+    printf("    - cnn_load_weights:%lu us\n", measured_load_weights_time_us);
+    printf("    - cnn_load_bias:   %lu us\n", measured_load_bias_time_us);
+    printf("    - cnn_configure:   %lu us\n", measured_configure_time_us);
+    printf("    - cnn_unload:      %lu us\n", measured_unload_time_us);
+    printf("    - softmax:         %lu us\n", measured_softmax_time_us);
+    printf("    - total overhead:  %lu us\n", total_overhead_us);
     printf("  Min Latency:         %lu us\n", min_time);
     printf("  Max Latency:         %lu us\n", max_time);
     printf("  Latency Jitter:      %lu us\n", max_time - min_time);
@@ -182,7 +261,7 @@ void print_benchmark_results(uint32_t total_time_us, uint32_t min_time, uint32_t
     printf("------------------------------------------------------------\n");
     
     printf("[TOPS ANALYSIS]\n");
-    printf("  Peak TOPS:           0.0064 TOPS (theoretical max)\n");
+    printf("  Peak TOPS:           0.0576 TOPS (theoretical max)\n");
     printf("  Effective TOPS:      0.%04lu TOPS (actual)\n", gops_x10000);
     printf("  Effective MACs:      0.%04lu TMACs/s\n", gmacs_x10000);
     printf("  NPU Utilization:     %lu.%lu%%\n", utilization_x10/10, utilization_x10%10);
@@ -192,6 +271,7 @@ void print_benchmark_results(uint32_t total_time_us, uint32_t min_time, uint32_t
     
     printf("[MEMORY EFFICIENCY]\n");
     printf("  Weight Memory:       %lu bytes (%lu.%lu KB)\n", WEIGHT_BYTES, WEIGHT_BYTES/1024, ((WEIGHT_BYTES%1024)*10)/1024);
+    printf("  Bias Memory:         %lu bytes\n", BIAS_BYTES);
     printf("  Input Size:          %lu bytes\n", INPUT_BYTES);
     printf("  Output Size:         %lu bytes\n", OUTPUT_BYTES);
     printf("  Data Movement:       %lu bytes/inference\n", data_moved_bytes);
@@ -255,6 +335,9 @@ int main(void)
   printf("Warmup complete. Output verified.\n");
   printf("Warmup inference time: %lu us\n", cnn_time);
   fflush(stdout);
+
+  // Measure overhead times
+  measure_overhead_times();
 
   // Benchmark loop - only measure pure CNN inference time
   // Weights are already loaded, we just need to reinit, reconfigure, reload input and run

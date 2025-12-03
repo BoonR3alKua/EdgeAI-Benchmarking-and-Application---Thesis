@@ -1,0 +1,343 @@
+CIFAR100 (32x32):
+============================================================
+          BENCHMARK REPORT - SimpleNet
+============================================================
+[BASIC STATISTICS]
+  Total Images:        30
+  Correct:             4/30 (13.3%)
+  Avg Confidence:      40.3%
+------------------------------------------------------------
+[LATENCY METRICS]
+  Core Latency (NPU):  2596.40 us (2.596 ms)
+  System Latency:      3023.40 us (3.023 ms)
+  Min Latency:         2595 us
+  Max Latency:         2597 us
+  Latency Jitter:      2 us
+  --- Measured Overhead ---
+  Load Input:          202 us
+  CNN Init:            5 us
+  CNN Configure:       145 us
+  CNN Unload:          29 us
+  Softmax:             46 us
+  Total Overhead:      427.00 us
+------------------------------------------------------------
+[THROUGHPUT METRICS]
+  Throughput:          385.15 FPS
+  Total Time:          77.89 ms (30 images)
+------------------------------------------------------------
+[TOPS ANALYSIS]
+  Peak TOPS:           0.0576 TOPS (theoretical max)
+  Effective TOPS:      0.0072 TOPS (actual)
+  Effective MACs:      0.0071 TMACs/s
+  NPU Utilization:     12.4%
+  Ops/Inference:       18.61 M ops
+  MACs/Inference:      18.46 M MACs
+------------------------------------------------------------
+[MEMORY EFFICIENCY]
+  Weight Memory:       381792 bytes (372.8 KB)
+  Bias Memory:         1220 bytes
+  Input Size:          3072 bytes
+  Output Size:         400 bytes
+  Data Movement:       3472 bytes/inference
+  Bandwidth Used:      1.28 MB/s
+  Arithmetic Intensity:48.0 ops/byte
+  Ops/Byte Moved:      5359.4 ops/byte
+------------------------------------------------------------
+[VERDICT]
+  NPU Efficiency:      LOW (<20%)
+  Accuracy:            PARTIAL
+============================================================
+
+============================================================
+          BENCHMARK REPORT - MobileNetV2
+============================================================
+[BASIC STATISTICS]
+  Total Images:        30
+  Correct:             2/30 (6.7%)
+  Avg Confidence:      36.4%
+------------------------------------------------------------
+[LATENCY METRICS]
+  Core Latency (NPU):  1516.00 us (1.516 ms)
+  System Latency:      2024.00 us (2.024 ms)
+  Min Latency:         1516 us
+  Max Latency:         1516 us
+  Latency Jitter:      0 us
+  --- Measured Overhead ---
+  Load Input:          202 us
+  CNN Init:            3 us
+  CNN Configure:       230 us
+  CNN Unload:          29 us
+  Softmax:             44 us
+  Total Overhead:      508.00 us
+------------------------------------------------------------
+[THROUGHPUT METRICS]
+  Throughput:          659.63 FPS
+  Total Time:          45.48 ms (30 images)
+------------------------------------------------------------
+[TOPS ANALYSIS]
+  Peak TOPS:           0.0576 TOPS (theoretical max)
+  Effective TOPS:      0.0035 TOPS (actual)
+  Effective MACs:      0.0035 TMACs/s
+  NPU Utilization:     6.1%
+  Ops/Inference:       5.34 M ops
+  MACs/Inference:      5.28 M MACs
+------------------------------------------------------------
+[MEMORY EFFICIENCY]
+  Weight Memory:       121136 bytes (118.3 KB)
+  Bias Memory:         764 bytes
+  Input Size:          3072 bytes
+  Output Size:         400 bytes
+  Data Movement:       3472 bytes/inference
+  Bandwidth Used:      2.18 MB/s
+  Arithmetic Intensity:42.5 ops/byte
+  Ops/Byte Moved:      1539.1 ops/byte
+------------------------------------------------------------
+[VERDICT]
+  NPU Efficiency:      LOW (<20%)
+  Accuracy:            PARTIAL
+============================================================
+
+============================================================
+        BENCHMARK REPORT - EfficientNetV2
+============================================================
+[BASIC STATISTICS]
+  Total Images:        30
+  Correct:             18/30 (60.0%)
+  Avg Confidence:      54.6%
+------------------------------------------------------------
+[LATENCY METRICS]
+  Core Latency (NPU):  2409.93 us (2.410 ms)
+  System Latency:      2892.93 us (2.893 ms)
+  Min Latency:         2408 us
+  Max Latency:         2410 us
+  Latency Jitter:      2 us
+  --- Measured Overhead ---
+  Load Input:          202 us
+  CNN Init:            3 us
+  CNN Configure:       204 us
+  CNN Unload:          28 us
+  Softmax:             46 us
+  Total Overhead:      483.00 us
+------------------------------------------------------------
+[THROUGHPUT METRICS]
+  Throughput:          414.95 FPS
+  Total Time:          72.30 ms (30 images)
+------------------------------------------------------------
+[TOPS ANALYSIS]
+  Peak TOPS:           0.0576 TOPS (theoretical max)
+  Effective TOPS:      0.0062 TOPS (actual)
+  Effective MACs:      0.0061 TMACs/s
+  NPU Utilization:     10.7%
+  Ops/Inference:       14.89 M ops
+  MACs/Inference:      14.73 M MACs
+------------------------------------------------------------
+[MEMORY EFFICIENCY]
+  Weight Memory:       280136 bytes (273.6 KB)
+  Bias Memory:         948 bytes
+  Input Size:          3072 bytes
+  Output Size:         400 bytes
+  Data Movement:       3472 bytes/inference
+  Bandwidth Used:      1.37 MB/s
+  Arithmetic Intensity:52.0 ops/byte
+  Ops/Byte Moved:      4289.6 ops/byte
+------------------------------------------------------------
+[VERDICT]
+  NPU Efficiency:      LOW (<20%)
+  Accuracy:            PARTIAL
+============================================================
+CIFAR10 (32x32):
+============================================================
+        BENCHMARK REPORT - ResNetV2-18 (32x32)
+============================================================
+[BASIC STATISTICS]
+  Total Images:        30
+  Correct:             28/30 (93.3%)
+  Avg Confidence:      81.5%
+------------------------------------------------------------
+[LATENCY METRICS]
+  Core Latency (NPU):  3183.97 us (3.184 ms)
+  System Latency:      3614.97 us (3.615 ms)
+  Min Latency:         3183 us
+  Max Latency:         3184 us
+  Latency Jitter:      1 us
+  --- Measured Overhead ---
+  Load Input:          202 us
+  CNN Init:            5 us
+  CNN Configure:       213 us
+  CNN Unload:          3 us
+  Softmax:             8 us
+  Total Overhead:      431.00 us
+------------------------------------------------------------
+[THROUGHPUT METRICS]
+  Throughput:          314.07 FPS
+  Total Time:          95.52 ms (30 images)
+------------------------------------------------------------
+[TOPS ANALYSIS]
+  Peak TOPS:           0.0576 TOPS (theoretical max)
+  Effective TOPS:      0.0062 TOPS (actual)
+  Effective MACs:      0.0061 TMACs/s
+  NPU Utilization:     10.8%
+  Ops/Inference:       19.88 M ops
+  MACs/Inference:      19.58 M MACs
+------------------------------------------------------------
+[MEMORY EFFICIENCY]
+  Weight Memory:       334512 bytes (326.7 KB)
+  Bias Memory:         794 bytes
+  Input Size:          3072 bytes
+  Output Size:         40 bytes
+  Data Movement:       3112 bytes/inference
+  Bandwidth Used:      0.93 MB/s
+  Arithmetic Intensity:58.0 ops/byte
+  Ops/Byte Moved:      6387.9 ops/byte
+------------------------------------------------------------
+[VERDICT]
+  NPU Efficiency:      LOW (<20%)
+  Accuracy:            PARTIAL
+============================================================
+CIFAR10 (64x64):
+============================================================
+        BENCHMARK REPORT - AlexNet-Small (64x64)
+============================================================
+[BASIC STATISTICS]
+  Total Images:        8
+  Correct:             8/8 (100.0%)
+  Avg Confidence:      85.1%
+------------------------------------------------------------
+[LATENCY METRICS]
+  Core Latency (NPU):  1924.88 us (1.925 ms)
+  System Latency:      2830.88 us (2.831 ms)
+  Min Latency:         1923 us
+  Max Latency:         1926 us
+  Latency Jitter:      3 us
+  --- Measured Overhead ---
+  Load Input:          801 us
+  CNN Init:            3 us
+  CNN Configure:       89 us
+  CNN Unload:          5 us
+  Softmax:             8 us
+  Total Overhead:      906.00 us
+------------------------------------------------------------
+[THROUGHPUT METRICS]
+  Throughput:          519.51 FPS
+  Total Time:          15.40 ms (8 images)
+------------------------------------------------------------
+[TOPS ANALYSIS]
+  Peak TOPS:           0.0576 TOPS (theoretical max)
+  Effective TOPS:      0.0140 TOPS (actual)
+  Effective MACs:      0.0140 TMACs/s
+  NPU Utilization:     24.4%
+  Ops/Inference:       27.04 M ops
+  MACs/Inference:      26.89 M MACs
+------------------------------------------------------------
+[MEMORY EFFICIENCY]
+  Weight Memory:       180320 bytes (176.1 KB)
+  Bias Memory:         682 bytes
+  Input Size:          12288 bytes
+  Output Size:         40 bytes
+  Data Movement:       12328 bytes/inference
+  Bandwidth Used:      6.11 MB/s
+  Arithmetic Intensity:139.6 ops/byte
+  Ops/Byte Moved:      2193.3 ops/byte
+------------------------------------------------------------
+[VERDICT]
+  NPU Efficiency:      MODERATE (20-40%)
+  Accuracy:            PERFECT
+============================================================
+ASL27 (64x64):
+============================================================
+        BENCHMARK REPORT - ASL ResNetV2-18 (64x64)
+============================================================
+[BASIC STATISTICS]
+  Total Images:        8
+  Correct:             8/8 (100.0%)
+  Avg Confidence:      99.8%
+------------------------------------------------------------
+[LATENCY METRICS]
+  Core Latency (NPU):  3246.00 us (3.246 ms)
+  System Latency:      4288.00 us (4.288 ms)
+  Overhead Breakdown (measured):
+    - load_input:      800 us
+    - cnn_init:        3 us
+    - cnn_configure:   216 us
+    - cnn_unload:      8 us
+    - softmax:         15 us
+    - total overhead:  1042 us
+  Min Latency:         3246 us
+  Max Latency:         3246 us
+  Latency Jitter:      0 us
+------------------------------------------------------------
+[THROUGHPUT METRICS]
+  Throughput:          308.07 FPS
+  Total Time:          25.97 ms (8 images)
+------------------------------------------------------------
+[TOPS ANALYSIS]
+  Peak TOPS:           0.0576 TOPS (theoretical max)
+  Effective TOPS:      0.0061 TOPS (actual)
+  Effective MACs:      0.0060 TMACs/s
+  NPU Utilization:     10.6%
+  Ops/Inference:       19.89 M ops
+  MACs/Inference:      19.58 M MACs
+------------------------------------------------------------
+[MEMORY EFFICIENCY]
+  Weight Memory:       336688 bytes (328.8 KB)
+  Bias Memory:         811 bytes
+  Input Size:          12288 bytes
+  Output Size:         108 bytes
+  Data Movement:       12396 bytes/inference
+  Bandwidth Used:      3.64 MB/s
+  Arithmetic Intensity:56.1 ops/byte
+  Ops/Byte Moved:      1604.8 ops/byte
+------------------------------------------------------------
+[VERDICT]
+  NPU Efficiency:      LOW (<20%)
+  Accuracy:            PERFECT
+============================================================
+
+============================================================
+        BENCHMARK REPORT - ASL AlexNet-Small (64x64)        
+============================================================
+[BASIC STATISTICS]
+  Total Images:        8
+  Correct:             7/8 (87.5%)
+  Avg Confidence:      100.0%
+------------------------------------------------------------
+[LATENCY METRICS]
+  Core Latency (NPU):  1925.88 us (1.926 ms)
+  System Latency:      2840.88 us (2.841 ms)
+  Overhead Breakdown (measured):
+    - load_input:      800 us
+    - cnn_init:        3 us
+    - cnn_configure:   89 us
+    - cnn_unload:      8 us
+    - softmax:         15 us
+    - total overhead:  915 us
+  Min Latency:         1925 us
+  Max Latency:         1926 us
+  Latency Jitter:      1 us
+------------------------------------------------------------
+[THROUGHPUT METRICS]
+  Throughput:          519.24 FPS
+  Total Time:          15.41 ms (8 images)
+------------------------------------------------------------
+[TOPS ANALYSIS]
+  Peak TOPS:           0.0576 TOPS (theoretical max)
+  Effective TOPS:      0.0140 TOPS (actual)
+  Effective MACs:      0.0140 TMACs/s
+  NPU Utilization:     24.4%
+  Ops/Inference:       27.04 M ops
+  MACs/Inference:      26.89 M MACs
+------------------------------------------------------------
+[MEMORY EFFICIENCY]
+  Weight Memory:       182496 bytes (178.2 KB)
+  Bias Memory:         699 bytes
+  Input Size:          12288 bytes
+  Output Size:         108 bytes
+  Data Movement:       12396 bytes/inference
+  Bandwidth Used:      6.14 MB/s
+  Arithmetic Intensity:138.0 ops/byte
+  Ops/Byte Moved:      2181.5 ops/byte
+------------------------------------------------------------
+[VERDICT]
+  NPU Efficiency:      MODERATE (20-40%)
+  Accuracy:            PARTIAL
+============================================================

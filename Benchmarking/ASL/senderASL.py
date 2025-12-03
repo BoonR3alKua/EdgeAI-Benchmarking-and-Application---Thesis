@@ -43,7 +43,7 @@ START_MARKER = b'\xDE\xAD\xBE\xEF'  # DEADBEEF - Start of transmission marker
 ASL_CLASSES = [
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
     'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
-    'U', 'V', 'W', 'X', 'Y', 'Z', 'del'
+    'U', 'V', 'W', 'X', 'Y', 'Z', 'unknown'
 ]
 
 CLASS_TO_LABEL = {cls: idx for idx, cls in enumerate(ASL_CLASSES)}
@@ -106,7 +106,7 @@ def load_asl_images(dataset_path=DATASET_PATH, num_images=1000, use_test_set=Tru
             print(f"Error: Training set path does not exist: {subset_path}")
             return [], [], []
         
-        # Training set has subfolders per class (A, B, C, ..., Z, del)
+        # Training set has subfolders per class (A, B, C, ..., Z, unknown)
         all_images = []
         for class_name in ASL_CLASSES:
             class_path = os.path.join(subset_path, class_name)

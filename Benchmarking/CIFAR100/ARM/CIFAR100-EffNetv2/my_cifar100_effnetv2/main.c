@@ -93,6 +93,13 @@ static BenchmarkResult results[MAX_QUEUE_SIZE];
 static int32_t ml_data[CNN_NUM_OUTPUTS];
 static q15_t ml_softmax[CNN_NUM_OUTPUTS];
 
+// Timing measurements for load/unload operations
+static uint32_t measured_init_time_us = 0;
+static uint32_t measured_configure_time_us = 0;
+static uint32_t measured_unload_time_us = 0;
+static uint32_t measured_softmax_time_us = 0;
+static uint32_t measured_load_input_time_us = 0;
+
 // ============================================================================
 // Queue Functions
 // ============================================================================
@@ -234,6 +241,48 @@ static void load_image_to_cnn(ImageQueueEntry *img) {
     memcpy32((uint32_t *)0x50c00000, img->ch2, CHANNEL_WORDS);
 }
 
+/**
+ * Measure load/unload times using a calibration run
+ */
+static void measure_overhead_times(ImageQueueEntry *img)
+{
+    // Measure load_input time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    load_image_to_cnn(img);
+    measured_load_input_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Measure cnn_init time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    cnn_init();
+    measured_init_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Measure cnn_configure time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    cnn_configure();
+    measured_configure_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Run inference to get valid output data for softmax measurement
+    cnn_time = 0;
+    cnn_start();
+    while (cnn_time == 0) { __WFI(); }
+    
+    // Measure cnn_unload time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    cnn_unload((uint32_t *)ml_data);
+    measured_unload_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Measure softmax time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    softmax_q17p14_q15((const q31_t *)ml_data, CNN_NUM_OUTPUTS, ml_softmax);
+    measured_softmax_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    printf("[MEASURE] load_input: %lu us\n", measured_load_input_time_us);
+    printf("[MEASURE] cnn_init: %lu us\n", measured_init_time_us);
+    printf("[MEASURE] cnn_configure: %lu us\n", measured_configure_time_us);
+    printf("[MEASURE] cnn_unload: %lu us\n", measured_unload_time_us);
+    printf("[MEASURE] softmax: %lu us\n", measured_softmax_time_us);
+}
+
 static int run_cnn_inference(float *confidence) {
     cnn_init();
     cnn_configure();
@@ -260,10 +309,14 @@ static int run_cnn_inference(float *confidence) {
 // Benchmark Functions
 // ============================================================================
 static void run_warmup(int iterations) {
-    printf("[WARMUP] Running %d iterations...\n", iterations);
-    
     ImageQueueEntry *first_img = queue_peek(0);
     if (first_img == NULL) { printf("[WARMUP] No images in queue!\n"); return; }
+    
+    // Measure overhead times before warmup
+    printf("[WARMUP] Measuring overhead times...\n");
+    measure_overhead_times(first_img);
+    
+    printf("[WARMUP] Running %d iterations...\n", iterations);
     
     load_image_to_cnn(first_img);
     
@@ -325,21 +378,35 @@ static void run_benchmark(uint32_t num_images) {
     float accuracy = ((float)correct_count / (float)num_images) * 100.0f;
     float avg_confidence = total_confidence / (float)num_images;
     
-    // EfficientNetV2 Model constants (UPDATE THESE from your model's synthesis output)
-    const uint32_t total_ops = 30000000;      // UPDATE: Total operations per inference
-    const uint32_t total_macs = 29000000;     // UPDATE: Total MACs per inference
-    const uint32_t weight_bytes = 420000;     // UPDATE: Weight memory used
-    const uint32_t bias_bytes = 2000;         // UPDATE: Bias memory used
-    const uint32_t input_bytes = 3072;
-    const uint32_t output_bytes = 400;
+    // EfficientNetV2 Model constants (from cnn.h synthesis output)
+    const uint32_t total_ops = 14893568;      // Total operations per inference
+    const uint32_t total_macs = 14733824;     // Total MACs per inference
+    const uint32_t weight_bytes = 280136;     // Weight memory used (63.3%)
+    const uint32_t bias_bytes = 948;          // Bias memory used (46.3%)
+    const uint32_t input_bytes = 3072;        // Input size (32x32x3)
+    const uint32_t output_bytes = 400;        // Output size (100 classes × 4 bytes)
     
     // MAX78000 NPU specs
-    const float npu_freq_mhz = 50.0f;
-    const uint32_t num_processors = 64;
-    const float peak_tops = (npu_freq_mhz * 1e6f * num_processors * 2) / 1e12f;
+    const float npu_freq_mhz = 50.0f;        // NPU clock frequency (Up to 50MHz)
+    const uint32_t num_processors = 64;      // Number of parallel processors
     
+    // CORRECTION:
+    // The accelerator outputs "Nominal 1 output channel per clock"
+    // For a 3x3 kernel, this requires 9 MACs per clock cycle.
+    // 1 MAC = 2 Operations (Multiply + Add)
+    // Therefore: 9 MACs * 2 Ops = 18 Ops per cycle.
+    const uint32_t ops_per_cycle = 18;       
+    
+    // Peak TOPS Calculation
+    // 50 MHz * 64 Processors * 18 Ops/cycle = 57,600 Million Ops = 57.6 GOPS
+    const float peak_tops = (npu_freq_mhz * 1e6f * num_processors * ops_per_cycle) / 1e12f;
+    // Result: ~0.0576 TOPS (or 57.6 GOPS)
+    
+    // Latency calculations using MEASURED values
     float core_latency_us = avg_time;
-    float system_latency_us = core_latency_us + 15.0f;
+    float load_time_us = (float)(measured_load_input_time_us + measured_init_time_us + measured_configure_time_us);
+    float unload_time_us = (float)(measured_unload_time_us + measured_softmax_time_us);
+    float system_latency_us = core_latency_us + load_time_us + unload_time_us;
     
     float effective_tops = (float)total_ops / (core_latency_us / 1e6f) / 1e12f;
     float effective_macs_tops = (float)total_macs / (core_latency_us / 1e6f) / 1e12f;
@@ -371,6 +438,13 @@ static void run_benchmark(uint32_t num_images) {
     printf("  Min Latency:         %lu us\n", min_time);
     printf("  Max Latency:         %lu us\n", max_time);
     printf("  Latency Jitter:      %lu us\n", max_time - min_time);
+    printf("  --- Measured Overhead ---\n");
+    printf("  Load Input:          %lu us\n", measured_load_input_time_us);
+    printf("  CNN Init:            %lu us\n", measured_init_time_us);
+    printf("  CNN Configure:       %lu us\n", measured_configure_time_us);
+    printf("  CNN Unload:          %lu us\n", measured_unload_time_us);
+    printf("  Softmax:             %lu us\n", measured_softmax_time_us);
+    printf("  Total Overhead:      %.2f us\n", (double)(load_time_us + unload_time_us));
     printf("------------------------------------------------------------\n");
     
     printf("[THROUGHPUT METRICS]\n");
@@ -389,6 +463,7 @@ static void run_benchmark(uint32_t num_images) {
     
     printf("[MEMORY EFFICIENCY]\n");
     printf("  Weight Memory:       %lu bytes (%.1f KB)\n", weight_bytes, (double)weight_bytes / 1024.0);
+    printf("  Bias Memory:         %lu bytes\n", bias_bytes);
     printf("  Input Size:          %lu bytes\n", input_bytes);
     printf("  Output Size:         %lu bytes\n", output_bytes);
     printf("  Data Movement:       %lu bytes/inference\n", data_moved_bytes);
@@ -482,3 +557,32 @@ int main(void) {
     return E_NO_ERROR;
 }
 
+/*
+  SUMMARY OF OPS
+  Hardware: 14,893,568 ops (14,733,824 macc; 132,096 comp; 27,648 add; 0 mul; 0 bitwise)
+    Layer 0 (stem): 688,128 ops (663,552 macc; 24,576 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 1 (stage1_conv): 5,332,992 ops (5,308,416 macc; 24,576 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 2 (stage1_short): 0 ops (0 macc; 0 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 3 (stage1_add): 24,576 ops (0 macc; 0 comp; 24,576 add; 0 mul; 0 bitwise)
+    Layer 4 (pool1): 24,576 ops (0 macc; 24,576 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 5 (stage2_fused): 2,666,496 ops (2,654,208 macc; 12,288 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 6 (stage2_proj): 602,112 ops (589,824 macc; 12,288 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 7 (pool2): 12,288 ops (0 macc; 12,288 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 8 (stage3_fused): 1,773,568 ops (1,769,472 macc; 4,096 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 9 (stage3_proj): 266,240 ops (262,144 macc; 4,096 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 10 (pool3): 4,096 ops (0 macc; 4,096 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 11 (stage4_expand): 66,560 ops (65,536 macc; 1,024 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 12 (stage4_spatial): 590,848 ops (589,824 macc; 1,024 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 13 (stage4_proj): 66,560 ops (65,536 macc; 1,024 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 14 (stage4_short): 0 ops (0 macc; 0 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 15 (stage4_add): 1,024 ops (0 macc; 0 comp; 1,024 add; 0 mul; 0 bitwise)
+    Layer 16 (stage5_expand): 133,120 ops (131,072 macc; 2,048 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 17 (stage5_spatial): 2,361,344 ops (2,359,296 macc; 2,048 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 18 (stage5_proj): 264,192 ops (262,144 macc; 2,048 comp; 0 add; 0 mul; 0 bitwise)
+    Layer 19 (avg_pool): 2,048 ops (0 macc; 0 comp; 2,048 add; 0 mul; 0 bitwise)
+    Layer 20 (fc): 12,800 ops (12,800 macc; 0 comp; 0 add; 0 mul; 0 bitwise)
+
+  RESOURCE USAGE
+  Weight memory: 280,136 bytes out of 442,368 bytes total (63.3%)
+  Bias memory:   948 bytes out of 2,048 bytes total (46.3%)
+*/

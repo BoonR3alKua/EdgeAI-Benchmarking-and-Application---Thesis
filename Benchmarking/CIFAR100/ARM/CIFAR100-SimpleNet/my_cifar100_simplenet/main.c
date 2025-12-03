@@ -115,6 +115,13 @@ typedef struct {
 
 static BenchmarkResult benchmark_results[MAX_QUEUE_SIZE];
 
+// Timing measurements for load/unload operations
+static uint32_t measured_init_time_us = 0;
+static uint32_t measured_configure_time_us = 0;
+static uint32_t measured_unload_time_us = 0;
+static uint32_t measured_softmax_time_us = 0;
+static uint32_t measured_load_input_time_us = 0;
+
 /**
  * Check if queue is full
  */
@@ -287,6 +294,53 @@ void load_input_from_queue(ImageQueueEntry *entry)
 }
 
 /**
+ * Measure load/unload times using a calibration run
+ */
+void measure_overhead_times(ImageQueueEntry *entry)
+{
+    uint32_t start, end;
+    
+    // Measure load_input time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    load_input_from_queue(entry);
+    measured_load_input_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Measure cnn_init time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    cnn_init();
+    measured_init_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Measure cnn_configure time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    cnn_configure();
+    measured_configure_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Run inference to get valid output data for softmax measurement
+    cnn_time = 0;
+    cnn_start();
+    SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
+    while (cnn_time == 0) {
+        asm volatile("wfi");
+    }
+    
+    // Measure cnn_unload time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    cnn_unload((uint32_t *)ml_data);
+    measured_unload_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    // Measure softmax time
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
+    softmax_q17p14_q15((const q31_t *)ml_data, CNN_NUM_OUTPUTS, ml_softmax);
+    measured_softmax_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    
+    printf("[MEASURE] load_input: %lu us\n", measured_load_input_time_us);
+    printf("[MEASURE] cnn_init: %lu us\n", measured_init_time_us);
+    printf("[MEASURE] cnn_configure: %lu us\n", measured_configure_time_us);
+    printf("[MEASURE] cnn_unload: %lu us\n", measured_unload_time_us);
+    printf("[MEASURE] softmax: %lu us\n", measured_softmax_time_us);
+}
+
+/**
  * Perform CNN inference and return classification
  * Also stores confidence in the provided pointer
  */
@@ -332,6 +386,10 @@ void run_warmup(int iterations)
         printf("[WARMUP] No images in queue for warmup!\n");
         return;
     }
+    
+    // Measure overhead times before warmup
+    printf("[WARMUP] Measuring overhead times...\n");
+    measure_overhead_times(entry);
     
     printf("[WARMUP] Running %d iterations...\n", iterations);
     
@@ -420,14 +478,25 @@ void run_benchmark(uint32_t num_images)
     const uint32_t output_bytes = 400;        // Output size (100 classes × 4 bytes)
     
     // MAX78000 NPU specs
-    const float npu_freq_mhz = 50.0f;         // NPU clock frequency (PCLK = 100MHz / 2)
-    const uint32_t num_processors = 64;       // Number of parallel processors
-    const float peak_tops = (npu_freq_mhz * 1e6f * num_processors * 2) / 1e12f;  // Peak TOPS (×2 for MAC = 2 ops)
+    const float npu_freq_mhz = 50.0f;        // NPU clock frequency (Up to 50MHz)
+    const uint32_t num_processors = 64;      // Number of parallel processors
     
-    // Latency calculations
+    // CORRECTION:
+    // The accelerator outputs "Nominal 1 output channel per clock"
+    // For a 3x3 kernel, this requires 9 MACs per clock cycle.
+    // 1 MAC = 2 Operations (Multiply + Add)
+    // Therefore: 9 MACs * 2 Ops = 18 Ops per cycle.
+    const uint32_t ops_per_cycle = 18;       
+    
+    // Peak TOPS Calculation
+    // 50 MHz * 64 Processors * 18 Ops/cycle = 57,600 Million Ops = 57.6 GOPS
+    const float peak_tops = (npu_freq_mhz * 1e6f * num_processors * ops_per_cycle) / 1e12f;
+    // Result: ~0.0576 TOPS (or 57.6 GOPS)
+    
+    // Latency calculations using MEASURED values
     float core_latency_us = avg_time;         // CNN accelerator time (what we measure)
-    float load_time_us = 10.0f;               // Estimated: cnn_init + cnn_configure (~10us)
-    float unload_time_us = 5.0f;              // Estimated: cnn_unload + softmax (~5us)
+    float load_time_us = (float)(measured_load_input_time_us + measured_init_time_us + measured_configure_time_us);
+    float unload_time_us = (float)(measured_unload_time_us + measured_softmax_time_us);
     float system_latency_us = core_latency_us + load_time_us + unload_time_us;
     
     // TOPS calculations
@@ -450,112 +519,65 @@ void run_benchmark(uint32_t num_images)
     // =========================================================================
     
     printf("\n");
-    printf("╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║              BENCHMARK REPORT - SimpleNet                    ║\n");
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    printf("============================================================\n");
+    printf("          BENCHMARK REPORT - SimpleNet                      \n");
+    printf("============================================================\n");
     
-    // Basic Statistics
-    printf("║ [BASIC STATISTICS]                                           ║\n");
-    printf("║   Total Images:        %-6lu                                ║\n", idx);
-    printf("║   Correct:             %d/%lu (%.1f%%)                         \n", 
-           correct_count, idx, (double)accuracy);
-    printf("║   Avg Confidence:      %.1f%%                                 \n", (double)avg_confidence);
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    printf("[BASIC STATISTICS]\n");
+    printf("  Total Images:        %lu\n", idx);
+    printf("  Correct:             %d/%lu (%.1f%%)\n", correct_count, idx, (double)accuracy);
+    printf("  Avg Confidence:      %.1f%%\n", (double)avg_confidence);
+    printf("------------------------------------------------------------\n");
     
-    // Latency Metrics
-    printf("║ [LATENCY METRICS]                                            ║\n");
-    printf("║   Core Latency (NPU):  %.2f us (%.3f ms)                     \n", 
-           (double)core_latency_us, (double)core_latency_us / 1000.0);
-    printf("║   System Latency:      %.2f us (%.3f ms)                     \n", 
-           (double)system_latency_us, (double)system_latency_us / 1000.0);
-    printf("║   Min Latency:         %lu us                                \n", min_time);
-    printf("║   Max Latency:         %lu us                                \n", max_time);
-    printf("║   Latency Jitter:      %lu us                                \n", max_time - min_time);
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    printf("[LATENCY METRICS]\n");
+    printf("  Core Latency (NPU):  %.2f us (%.3f ms)\n", (double)core_latency_us, (double)core_latency_us / 1000.0);
+    printf("  System Latency:      %.2f us (%.3f ms)\n", (double)system_latency_us, (double)system_latency_us / 1000.0);
+    printf("  Min Latency:         %lu us\n", min_time);
+    printf("  Max Latency:         %lu us\n", max_time);
+    printf("  Latency Jitter:      %lu us\n", max_time - min_time);
+    printf("  --- Measured Overhead ---\n");
+    printf("  Load Input:          %lu us\n", measured_load_input_time_us);
+    printf("  CNN Init:            %lu us\n", measured_init_time_us);
+    printf("  CNN Configure:       %lu us\n", measured_configure_time_us);
+    printf("  CNN Unload:          %lu us\n", measured_unload_time_us);
+    printf("  Softmax:             %lu us\n", measured_softmax_time_us);
+    printf("  Total Overhead:      %.2f us\n", (double)(load_time_us + unload_time_us));
+    printf("------------------------------------------------------------\n");
     
-    // Throughput Metrics
-    printf("║ [THROUGHPUT METRICS]                                         ║\n");
-    printf("║   Throughput:          %.2f FPS                              \n", (double)fps);
-    printf("║   Total Time:          %.2f ms (%lu images)                  \n", 
-           (double)total_time / 1000.0, idx);
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    printf("[THROUGHPUT METRICS]\n");
+    printf("  Throughput:          %.2f FPS\n", (double)fps);
+    printf("  Total Time:          %.2f ms (%lu images)\n", (double)total_time / 1000.0, idx);
+    printf("------------------------------------------------------------\n");
     
-    // TOPS Analysis
-    printf("║ [TOPS ANALYSIS]                                              ║\n");
-    printf("║   Peak TOPS:           %.3f TOPS (theoretical max)           \n", (double)peak_tops);
-    printf("║   Effective TOPS:      %.3f TOPS (actual)                    \n", (double)effective_tops);
-    printf("║   Effective MACs:      %.3f TMACs/s                          \n", (double)effective_macs_tops);
-    printf("║   NPU Utilization:     %.1f%%                                \n", (double)utilization_pct);
-    printf("║   Ops/Inference:       %.2f M ops                            \n", (double)total_ops / 1e6);
-    printf("║   MACs/Inference:      %.2f M MACs                           \n", (double)total_macs / 1e6);
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    printf("[TOPS ANALYSIS]\n");
+    printf("  Peak TOPS:           %.4f TOPS (theoretical max)\n", (double)peak_tops);
+    printf("  Effective TOPS:      %.4f TOPS (actual)\n", (double)effective_tops);
+    printf("  Effective MACs:      %.4f TMACs/s\n", (double)effective_macs_tops);
+    printf("  NPU Utilization:     %.1f%%\n", (double)utilization_pct);
+    printf("  Ops/Inference:       %.2f M ops\n", (double)total_ops / 1e6);
+    printf("  MACs/Inference:      %.2f M MACs\n", (double)total_macs / 1e6);
+    printf("------------------------------------------------------------\n");
     
-    // Memory Efficiency
-    printf("║ [MEMORY EFFICIENCY]                                          ║\n");
-    printf("║   Weight Memory:       %lu bytes (%.1f KB)                   \n", 
-           weight_bytes, (double)weight_bytes / 1024.0);
-    printf("║   Input Size:          %lu bytes                             \n", input_bytes);
-    printf("║   Output Size:         %lu bytes                             \n", output_bytes);
-    printf("║   Data Movement:       %lu bytes/inference                   \n", data_moved_bytes);
-    printf("║   Bandwidth Used:      %.2f MB/s                             \n", (double)bandwidth_mb_per_sec);
-    printf("║   Arithmetic Intensity:%.1f ops/byte                         \n", (double)arithmetic_intensity);
-    printf("║   Ops/Byte Moved:      %.1f ops/byte                         \n", (double)ops_per_byte);
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    printf("[MEMORY EFFICIENCY]\n");
+    printf("  Weight Memory:       %lu bytes (%.1f KB)\n", weight_bytes, (double)weight_bytes / 1024.0);
+    printf("  Bias Memory:         %lu bytes\n", bias_bytes);
+    printf("  Input Size:          %lu bytes\n", input_bytes);
+    printf("  Output Size:         %lu bytes\n", output_bytes);
+    printf("  Data Movement:       %lu bytes/inference\n", data_moved_bytes);
+    printf("  Bandwidth Used:      %.2f MB/s\n", (double)bandwidth_mb_per_sec);
+    printf("  Arithmetic Intensity:%.1f ops/byte\n", (double)arithmetic_intensity);
+    printf("  Ops/Byte Moved:      %.1f ops/byte\n", (double)ops_per_byte);
+    printf("------------------------------------------------------------\n");
     
-    // Final Verdict
-    printf("║ [VERDICT]                                                    ║\n");
+    printf("[VERDICT]\n");
     if (utilization_pct >= 40.0f) {
-        printf("║   NPU Efficiency:      GOOD (>=40%%)                         ║\n");
+        printf("  NPU Efficiency:      GOOD (>=40%%)\n");
     } else if (utilization_pct >= 20.0f) {
-        printf("║   NPU Efficiency:      MODERATE (20-40%%)                    ║\n");
+        printf("  NPU Efficiency:      MODERATE (20-40%%)\n");
     } else {
-        printf("║   NPU Efficiency:      LOW (<20%%)                           ║\n");
+        printf("  NPU Efficiency:      LOW (<20%%)\n");
     }
-    printf("║   Accuracy:            %s                                  \n",
-           (correct_count == (int)idx) ? "PERFECT" : "PARTIAL");
-    printf("╚══════════════════════════════════════════════════════════════╝\n");
-    
-    // Layer-by-layer breakdown (estimated from ops count)
-    static const struct {
-        const char *name;
-        uint32_t ops;
-        uint32_t macc;
-    } layer_info[] = {
-        {"Conv2D-64-3x3",      458752,   442368},   // Layer 0
-        {"Conv2D-128-3x3",    2969600,  2949120},   // Layer 1
-        {"Conv2D-128-3x3",    3706880,  3686400},   // Layer 2
-        {"Conv2D-128-3x3",    3706880,  3686400},   // Layer 3
-        {"Conv2D-128-3x3",     947200,   921600},   // Layer 4
-        {"Conv2D-256-3x3",     926720,   921600},   // Layer 5
-        {"Conv2D-256-3x3",    2038784,  2027520},   // Layer 6
-        {"Conv2D-256-3x3",    1230848,  1216512},   // Layer 7
-        {"Conv2D-512-3x3",    1330176,  1327104},   // Layer 8
-        {"Conv2D-512-3x3",     668160,   663552},   // Layer 9
-        {"Conv2D-512-3x3",     200192,   196608},   // Layer 10
-        {"Conv2D-512-1x1",     262656,   262144},   // Layer 11
-        {"Conv2D-512-1x1",     148096,   147456},   // Layer 12
-        {"Dense-100",           12800,    12800},   // Layer 13
-    };
-    const int num_layers = 14;
-    
-    printf("\n");
-    printf("============================================================\n");
-    printf("[LAYERS] Layer-by-Layer Breakdown (SimpleNet)\n");
-    printf("============================================================\n");
-    printf("Layer | Name              |    Ops    |   MACC   | Est.Time | %%Total\n");
-    printf("------|-------------------|-----------|----------|----------|-------\n");
-    
-    for (int l = 0; l < num_layers; l++) {
-        float pct = (float)layer_info[l].ops / (float)total_ops * 100.0f;
-        float est_time_us = (float)avg_time * pct / 100.0f;
-        printf("  %2d  | %-17s | %9lu | %8lu | %6.1fus | %5.1f%%\n",
-               l, layer_info[l].name, layer_info[l].ops, layer_info[l].macc,
-               (double)est_time_us, (double)pct);
-    }
-    
-    printf("------|-------------------|-----------|----------|----------|-------\n");
-    printf(" ALL  | Total             | %9u | %8u | %6.1fus | 100.0%%\n",
-           total_ops, 18461184, (double)avg_time);
+    printf("  Accuracy:            %s\n", (correct_count == (int)idx) ? "PERFECT" : "PARTIAL");
     printf("============================================================\n");
 }
 
