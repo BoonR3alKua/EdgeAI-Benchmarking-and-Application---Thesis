@@ -17,12 +17,12 @@ import argparse
 # ============================================================================
 SERIAL_PORT = 'COM6'
 BAUD_RATE = 115200
-NUM_IMAGES = 50
+NUM_IMAGES = 1
 USE_TEST_SET = True
 TIMEOUT = 30
 ACT_MODE_8BIT = True
 USE_CHW_FORMAT = True
-MAX_QUEUE_SIZE = 30  # Must match device MAX_QUEUE_SIZE
+MAX_QUEUE_SIZE = 1  # Must match device MAX_QUEUE_SIZE
 # ============================================================================
 
 IMAGE_SIZE = 32
