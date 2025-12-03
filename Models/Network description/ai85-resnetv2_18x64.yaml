@@ -1,0 +1,261 @@
+---
+# ResNetV2x64 for MAX78000 - Optimized for ASL Alphabet Dataset
+# Input: 64x64
+# Architecture: [1, 1, 2, 2] blocks per stage (6 blocks total)
+# Channel progression: 16 -> 32 -> 64 -> 128 (128 only at 4x4 spatial)
+# Pool in first layer: 64x64 -> 32x32
+# Total layers: 21
+# Classes: 27 (A-Z + unknown)
+# Note: On MAX78000, if confidence < 50%, also classify as 'unknown'
+
+arch: ai85resnetv2_18x64
+dataset: ASL_27
+
+layers:
+  # ========== STEM: Pool in layer 0 ==========
+  # Layer 0: conv1 (3->16 channels, 64x64->32x32 with pool)
+  - out_offset: 0x4000
+    processors: 0x0000000100010001
+    output_processors: 0x000000000000ffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    max_pool: 2
+    pool_stride: 2
+    data_format: CHW
+    name: conv1
+
+  # ========== STAGE 1: 16->32 channels, 32x32 (1 block) ==========
+  # Layer 1: layer1_0_conv (16->32 channels, 3x3, BN+ReLU)
+  - out_offset: 0x0000
+    processors: 0x000000000000ffff
+    output_processors: 0x00000000ffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    write_gap: 1
+    name: l1_0_conv
+
+  # Layer 2: layer1_0_shortcut (16->32 channels, 1x1, BN+ReLU)
+  - in_sequences: conv1
+    in_offset: 0x4000
+    out_offset: 0x0004
+    processors: 0x000000000000ffff
+    output_processors: 0x00000000ffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+    write_gap: 1
+    name: l1_0_short
+
+  # Layer 3: layer1_0_add
+  - in_sequences: [l1_0_conv, l1_0_short]
+    in_offset: 0x0000
+    out_offset: 0x4000
+    processors: 0x00000000ffffffff
+    eltwise: add
+    operation: passthrough
+    activate: None
+    name: l1_0_add
+
+  # ========== STAGE 2: 32->64 channels, 32x32->16x16 (1 block with pool) ==========
+  # Layer 4: layer2_0_conv + pool (32->64 channels, 3x3, BN+ReLU)
+  - out_offset: 0x0000
+    processors: 0x00000000ffffffff
+    output_processors: 0xffffffffffffffff
+    max_pool: 2
+    pool_stride: 2
+    pad: 1
+    operation: conv2d
+    kernel_size: 3x3
+    activate: ReLU
+    write_gap: 1
+    name: l2_0_conv
+
+  # Layer 5: layer2_0_shortcut + pool (32->64 channels, 1x1, BN+ReLU)
+  - in_sequences: l1_0_add
+    in_offset: 0x4000
+    out_offset: 0x0004
+    processors: 0x00000000ffffffff
+    output_processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+    max_pool: 2
+    pool_stride: 2
+    write_gap: 1
+    name: l2_0_short
+
+  # Layer 6: layer2_0_add
+  - in_sequences: [l2_0_conv, l2_0_short]
+    in_offset: 0x0000
+    out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    eltwise: add
+    operation: passthrough
+    activate: None
+    name: l2_0_add
+
+  # ========== STAGE 3: 64->64 channels, 16x16->8x8 (2 blocks) ==========
+  # Block 3.0: with pool
+  # Layer 7: layer3_0_conv + pool (64->64 channels, 3x3, BN+ReLU)
+  - out_offset: 0x0000
+    processors: 0xffffffffffffffff
+    max_pool: 2
+    pool_stride: 2
+    pad: 1
+    operation: conv2d
+    kernel_size: 3x3
+    activate: ReLU
+    write_gap: 1
+    name: l3_0_conv
+
+  # Layer 8: layer3_0_shortcut + pool (64->64 channels, 1x1, NO ReLU)
+  - in_sequences: l2_0_add
+    in_offset: 0x4000
+    out_offset: 0x0004
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: None
+    max_pool: 2
+    pool_stride: 2
+    write_gap: 1
+    name: l3_0_short
+
+  # Layer 9: layer3_0_add
+  - in_sequences: [l3_0_conv, l3_0_short]
+    in_offset: 0x0000
+    out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    eltwise: add
+    operation: passthrough
+    activate: None
+    name: l3_0_add
+
+  # Block 3.1: identity shortcut (no pool, same channels)
+  # Layer 10: layer3_1_conv (64->64 channels, 3x3, BN+ReLU)
+  - out_offset: 0x0000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    write_gap: 1
+    name: l3_1_conv
+
+  # Layer 11: Re-form l3_0_add with gap for eltwise
+  - in_sequences: l3_0_add
+    in_offset: 0x4000
+    out_offset: 0x0004
+    processors: 0xffffffffffffffff
+    operation: passthrough
+    write_gap: 1
+    name: l3_0_add_gap
+
+  # Layer 12: layer3_1_add (identity)
+  - in_sequences: [l3_1_conv, l3_0_add_gap]
+    in_offset: 0x0000
+    out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    eltwise: add
+    operation: passthrough
+    activate: None
+    name: l3_1_add
+
+  # ========== STAGE 4: 64->128 channels, 8x8->4x4 (2 blocks) ==========
+  # Block 4.0: with pool, channel expansion
+  # Layer 13: layer4_0_conv + pool (64->128 channels, 3x3, BN+ReLU)
+  - out_offset: 0x0000
+    processors: 0xffffffffffffffff
+    output_processors: 0xffffffffffffffff
+    max_pool: 2
+    pool_stride: 2
+    pad: 1
+    operation: conv2d
+    kernel_size: 3x3
+    activate: ReLU
+    write_gap: 1
+    name: l4_0_conv
+
+  # Layer 14: layer4_0_shortcut + pool (64->128 channels, 1x1, BN+ReLU)
+  - in_sequences: l3_1_add
+    in_offset: 0x4000
+    out_offset: 0x0004
+    processors: 0xffffffffffffffff
+    output_processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+    max_pool: 2
+    pool_stride: 2
+    write_gap: 1
+    name: l4_0_short
+
+  # Layer 15: layer4_0_add
+  - in_sequences: [l4_0_conv, l4_0_short]
+    in_offset: 0x0000
+    out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    eltwise: add
+    operation: passthrough
+    activate: None
+    name: l4_0_add
+
+  # Block 4.1: identity shortcut (no pool, same channels)
+  # Layer 16: layer4_1_conv (128->128 channels, 3x3, BN+ReLU)
+  - out_offset: 0x0000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    write_gap: 1
+    name: l4_1_conv
+
+  # Layer 17: Re-form l4_0_add with gap for eltwise
+  - in_sequences: l4_0_add
+    in_offset: 0x4000
+    out_offset: 0x0004
+    processors: 0xffffffffffffffff
+    operation: passthrough
+    write_gap: 1
+    name: l4_0_add_gap
+
+  # Layer 18: layer4_1_add (identity)
+  - in_sequences: [l4_1_conv, l4_0_add_gap]
+    in_offset: 0x0000
+    out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    eltwise: add
+    operation: passthrough
+    activate: None
+    name: l4_1_add
+
+  # ========== GLOBAL AVG POOL + FC ==========
+  # Layer 19: avg_pool (128 channels, 4x4->1x1)
+  - out_offset: 0x0000
+    processors: 0xffffffffffffffff
+    operation: passthrough
+    pool_first: True
+    avg_pool: 4
+    pool_stride: 1
+    activate: None
+    name: avg_pool
+
+  # Layer 20: fc (128->27 classes, 1x1 conv, wide output)
+  # 27 classes: A-Z (26) + unknown (1)
+  - out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    output_width: 32
+    activate: None
+    name: fc

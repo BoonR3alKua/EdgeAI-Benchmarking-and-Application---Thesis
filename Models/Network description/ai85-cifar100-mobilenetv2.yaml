@@ -1,0 +1,218 @@
+---
+# MobileNetV2 (0.75x) for CIFAR-100 on MAX78000
+# Faithful inverted residual architecture with expansion ratio 4
+# Approximates depthwise with: Expand (1x1) → Spatial (3x3) → Project (1x1)
+
+arch: ai85netmobilenetv2cifar100_m0_75
+dataset: CIFAR-100
+
+# Architecture: 32x32x3 → 32x32x16 → 32x32x8 → 16x16x12 → 8x8x16 → 4x4x20 → 4x4x24 → 4x4x32 → 4x4x48 → 100
+
+layers:
+  # Layer 0: Stem - 32x32x3 → 32x32x16
+  - out_offset: 0x2000
+    processors: 0x0000000100010001
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    data_format: CHW
+
+  # ========== Stage 1: InvertedResidual (t=1), 32x32x16 → 32x32x8 ==========
+  # No expansion, just spatial + project
+
+  # Layer 1: Spatial 16 → 8 (3x3)
+  - out_offset: 0x4000
+    processors: 0x000000000000ffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+
+  # Layer 2: Project 8 → 8 (1x1)
+  - out_offset: 0x6000
+    processors: 0x00000000000000ff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+
+  # Layer 3: MaxPool 32x32 → 16x16
+  - out_offset: 0x0000
+    processors: 0x00000000000000ff
+    operation: passthrough
+    max_pool: 2
+    pool_stride: 2
+
+  # ========== Stage 2: InvertedResidual (t=4), 16x16x8 → 16x16x12 ==========
+  # hidden_dim = 8 * 4 = 32, spatial_channels = max(32//2, 12) = 16
+
+  # Layer 4: Expand 8 → 32 (1x1)
+  - out_offset: 0x2000
+    processors: 0x00000000000000ff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+
+  # Layer 5: Spatial 32 → 16 (3x3)
+  - out_offset: 0x4000
+    processors: 0x00000000ffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+
+  # Layer 6: Project 16 → 12 (1x1)
+  - out_offset: 0x6000
+    processors: 0x000000000000ffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+
+  # Layer 7: MaxPool 16x16 → 8x8
+  - out_offset: 0x0000
+    processors: 0x0000000000000fff
+    operation: passthrough
+    max_pool: 2
+    pool_stride: 2
+
+  # ========== Stage 3: InvertedResidual (t=4), 8x8x12 → 8x8x16 ==========
+  # hidden_dim = 12 * 4 = 48, spatial_channels = max(48//2, 16) = 24
+
+  # Layer 8: Expand 12 → 48 (1x1)
+  - out_offset: 0x2000
+    processors: 0x0000000000000fff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+
+  # Layer 9: Spatial 48 → 24 (3x3)
+  - out_offset: 0x4000
+    processors: 0x0000ffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+
+  # Layer 10: Project 24 → 16 (1x1)
+  - out_offset: 0x6000
+    processors: 0x0000000000ffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+
+  # Layer 11: MaxPool 8x8 → 4x4
+  - out_offset: 0x0000
+    processors: 0x000000000000ffff
+    operation: passthrough
+    max_pool: 2
+    pool_stride: 2
+
+  # ========== Stage 4: InvertedResidual (t=4), 4x4x16 → 4x4x20 ==========
+  # hidden_dim = 16 * 4 = 64, spatial_channels = max(64//2, 20) = 32
+
+  # Layer 12: Expand 16 → 64 (1x1)
+  - out_offset: 0x2000
+    processors: 0x000000000000ffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+
+  # Layer 13: Spatial 64 → 32 (3x3)
+  - out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+
+  # Layer 14: Project 32 → 20 (1x1)
+  - out_offset: 0x6000
+    processors: 0x00000000ffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+
+  # ========== Stage 5: InvertedResidual (t=4), 4x4x20 → 4x4x24 ==========
+  # hidden_dim = 20 * 4 = 80, spatial_channels = max(80//2, 24) = 40
+
+  # Layer 15: Expand 20 → 80 (1x1) - streaming needed (80 > 64, 2 passes of 40)
+  - out_offset: 0x0000
+    processors: 0x00000000000fffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+    output_processors: 0x000000ffffffffff
+
+  # Layer 16: Spatial 80 → 40 (3x3) - streaming input (80 > 64)
+  - out_offset: 0x2000
+    processors: 0x000000ffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+
+  # Layer 17: Project 40 → 24 (1x1)
+  - out_offset: 0x4000
+    processors: 0x000000ffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+
+  # ========== Stage 6: InvertedResidual (t=4), 4x4x24 → 4x4x32 ==========
+  # hidden_dim = 24 * 4 = 96, spatial_channels = max(96//2, 32) = 48
+
+  # Layer 18: Expand 24 → 96 (1x1) - streaming needed (96 > 64, 2 passes of 48)
+  - out_offset: 0x6000
+    processors: 0x0000000000ffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+    output_processors: 0x0000ffffffffffff
+
+  # Layer 19: Spatial 96 → 48 (3x3) - streaming input (96 > 64)
+  - out_offset: 0x0000
+    processors: 0x0000ffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+
+  # Layer 20: Project 48 → 32 (1x1)
+  - out_offset: 0x2000
+    processors: 0x0000ffffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+
+  # ========== Head: 4x4x32 → 4x4x48 ==========
+  # Layer 21: Head conv
+  - out_offset: 0x4000
+    processors: 0x00000000ffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+
+  # ========== Global Average Pooling: 4x4x48 → 1x1x48 ==========
+  # Layer 22: AvgPool
+  - out_offset: 0x6000
+    processors: 0x0000ffffffffffff
+    operation: passthrough
+    avg_pool: 4
+    pool_stride: 4
+
+  # ========== FC: 48 → 100 classes ==========
+  # Layer 23: FC
+  - out_offset: 0x0000
+    processors: 0x0000ffffffffffff
+    operation: mlp
+    output_width: 32
+    activate: None

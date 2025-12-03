@@ -1,0 +1,222 @@
+---
+# EfficientNetV2 for MAX78000 - CIFAR-100 (32x32x3 input)
+# More faithful to original EfficientNetV2 architecture
+# - Fused-MBConv in early stages (Conv3x3 → Project 1x1)
+# - MBConv in later stages (Expand 1x1 → Conv3x3 → Project 1x1)
+# - Residual connections where in_channels == out_channels
+
+arch: ai85effnetv2
+dataset: CIFAR-100
+
+# Architecture:
+# Stem: 32x32x3 → 32x32x24
+# Stage1: Fused-MBConv1 with residual → 32x32x24
+# Pool: → 16x16x24
+# Stage2: Fused-MBConv4 → 16x16x48
+# Pool: → 8x8x48
+# Stage3: Fused-MBConv4 → 8x8x64
+# Pool: → 4x4x64
+# Stage4: MBConv4 with residual → 4x4x64
+# Stage5: MBConv4 → 4x4x128
+# Head: → 100
+
+layers:
+  # ========== Stem: 32x32x3 → 32x32x24 ==========
+  # Layer 0: stem
+  - out_offset: 0x2000
+    processors: 0x0000000100010001
+    output_processors: 0x0000000000ffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    data_format: CHW
+    name: stem
+
+  # ========== Stage 1: Fused-MBConv1 with residual ==========
+  # Layer 1: stage1_conv - 32x32x24 → 32x32x24
+  - out_offset: 0x0000
+    processors: 0x0000000000ffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    write_gap: 1
+    name: stage1_conv
+
+  # Layer 2: stage1 shortcut (passthrough for residual)
+  - in_sequences: stem
+    in_offset: 0x2000
+    out_offset: 0x0004
+    processors: 0x0000000000ffffff
+    operation: passthrough
+    write_gap: 1
+    name: stage1_short
+
+  # Layer 3: stage1_add (eltwise add)
+  - in_sequences: [stage1_conv, stage1_short]
+    in_offset: 0x0000
+    out_offset: 0x4000
+    processors: 0x0000000000ffffff
+    eltwise: add
+    operation: passthrough
+    activate: None
+    name: stage1_add
+
+  # Layer 4: pool1 - 32x32x24 → 16x16x24
+  - out_offset: 0x0000
+    processors: 0x0000000000ffffff
+    operation: passthrough
+    max_pool: 2
+    pool_stride: 2
+    name: pool1
+
+  # ========== Stage 2: Fused-MBConv4 ==========
+  # Layer 5: stage2_fused - 16x16x24 → 16x16x48
+  - out_offset: 0x2000
+    processors: 0x0000000000ffffff
+    output_processors: 0x0000ffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    name: stage2_fused
+
+  # Layer 6: stage2_project - 16x16x48 → 16x16x48
+  - out_offset: 0x4000
+    processors: 0x0000ffffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+    name: stage2_proj
+
+  # Layer 7: pool2 - 16x16x48 → 8x8x48
+  - out_offset: 0x0000
+    processors: 0x0000ffffffffffff
+    operation: passthrough
+    max_pool: 2
+    pool_stride: 2
+    name: pool2
+
+  # ========== Stage 3: Fused-MBConv4 ==========
+  # Layer 8: stage3_fused - 8x8x48 → 8x8x64
+  - out_offset: 0x2000
+    processors: 0x0000ffffffffffff
+    output_processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    name: stage3_fused
+
+  # Layer 9: stage3_project - 8x8x64 → 8x8x64
+  - out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+    name: stage3_proj
+
+  # Layer 10: pool3 - 8x8x64 → 4x4x64
+  - out_offset: 0x0000
+    processors: 0xffffffffffffffff
+    operation: passthrough
+    max_pool: 2
+    pool_stride: 2
+    name: pool3
+
+  # ========== Stage 4: MBConv4 with residual ==========
+  # Layer 11: stage4_expand - 4x4x64 → 4x4x64
+  - out_offset: 0x2000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+    name: stage4_expand
+
+  # Layer 12: stage4_spatial - 4x4x64 → 4x4x64
+  - out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    name: stage4_spatial
+
+  # Layer 13: stage4_project - 4x4x64 → 4x4x64
+  - out_offset: 0x6000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+    write_gap: 1
+    name: stage4_proj
+
+  # Layer 14: stage4 shortcut (passthrough for residual)
+  - in_sequences: pool3
+    in_offset: 0x0000
+    out_offset: 0x6004
+    processors: 0xffffffffffffffff
+    operation: passthrough
+    write_gap: 1
+    name: stage4_short
+
+  # Layer 15: stage4_add (eltwise add)
+  - in_sequences: [stage4_proj, stage4_short]
+    in_offset: 0x6000
+    out_offset: 0x0000
+    processors: 0xffffffffffffffff
+    eltwise: add
+    operation: passthrough
+    activate: None
+    name: stage4_add
+
+  # ========== Stage 5: MBConv4 (no residual - channel change) ==========
+  # Layer 16: stage5_expand - 4x4x64 → 4x4x128
+  - out_offset: 0x2000
+    processors: 0xffffffffffffffff
+    output_processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+    name: stage5_expand
+
+  # Layer 17: stage5_spatial - 4x4x128 → 4x4x128
+  - out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    name: stage5_spatial
+
+  # Layer 18: stage5_project - 4x4x128 → 4x4x128
+  - out_offset: 0x6000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 1x1
+    pad: 0
+    activate: ReLU
+    name: stage5_proj
+
+  # ========== Head ==========
+  # Layer 19: avg_pool - 4x4x128 → 1x1x128
+  - out_offset: 0x0000
+    processors: 0xffffffffffffffff
+    operation: passthrough
+    avg_pool: 4
+    pool_stride: 4
+    name: avg_pool
+
+  # Layer 20: fc - 1x1x128 → 100 classes
+  - out_offset: 0x2000
+    processors: 0xffffffffffffffff
+    operation: mlp
+    output_width: 32
+    activate: None
+    name: fc

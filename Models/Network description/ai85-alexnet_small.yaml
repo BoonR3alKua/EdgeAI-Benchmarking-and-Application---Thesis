@@ -1,0 +1,94 @@
+---
+# Smaller AlexNet for MAX78000 (ALL CHANNELS ≤ 64)
+# No streaming required - all channels ≤ 64
+# Matches AI85AlexNetSmall Python implementation
+# Input: 64×64×3, Output: 10 classes
+
+arch: ai85alexnet_small
+dataset: ASL_27
+
+# Architecture: 64×64×3 → 32×32×32 → 16×16×64 → 16×16×64 → 16×16×64 → 8×8×64 → 1×1×64 → 256 → 128 → 10
+
+layers:
+  # Layer 0: Conv1 + MaxPool (3 → 32, 3×3, pool 2×2)
+  # 64×64×3 → 32×32×32
+  # CHW format: Each channel must be in a different memory instance
+  # Memory instances are groups of 4 processors, so use processors 0, 16, 32 (one per instance)
+  - out_offset: 0x4000
+    processors: 0x0000000100010001
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    max_pool: 2
+    pool_stride: 2
+    data_format: CHW
+
+  # Layer 1: Conv2 + MaxPool (32 → 64, 3×3, pool 2×2)
+  # 32×32×32 → 16×16×64
+  - out_offset: 0x0000
+    processors: 0x00000000ffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    max_pool: 2
+    pool_stride: 2
+
+  # Layer 2: Conv3 (64 → 64, 3×3, no pool)
+  # 16×16×64 → 16×16×64
+  - out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+
+  # Layer 3: Conv4 (64 → 64, 3×3, no pool)
+  # 16×16×64 → 16×16×64
+  - out_offset: 0x0000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+
+  # Layer 4: Conv5 + MaxPool (64 → 64, 3×3, pool 2×2)
+  # 16×16×64 → 8×8×64
+  - out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    operation: conv2d
+    kernel_size: 3x3
+    pad: 1
+    activate: ReLU
+    max_pool: 2
+    pool_stride: 2
+
+  # Layer 5: Global Average Pool (8×8 → 1×1) for 64×64 input
+  # 8×8×64 → 1×1×64
+  - out_offset: 0x0000
+    processors: 0xffffffffffffffff
+    operation: passthrough
+    avg_pool: 8
+    pool_stride: 8
+
+  # Layer 6: FC1 (64 → 256) with ReLU
+  - out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    operation: mlp
+    activate: ReLU
+    output_width: 8
+
+  # Layer 7: FC2 (256 → 128) with ReLU
+  - out_offset: 0x0000
+    processors: 0xffffffffffffffff
+    operation: mlp
+    activate: ReLU
+    output_width: 8
+
+  # Layer 8: FC3 (128 → 10) wide mode output
+  - out_offset: 0x4000
+    processors: 0xffffffffffffffff
+    operation: mlp
+    activate: None
+    output_width: 32
