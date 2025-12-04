@@ -15,7 +15,7 @@
   },
 
   "target": "MAX78000",
-  "board": "FHTR_RevA",
+  "board": "FTHR_RevA",
 
   "project_name": "${workspaceFolderBasename}",
 

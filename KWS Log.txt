@@ -1,0 +1,247 @@
+*** Keyword Spotting Demonstration ***
+========================================
+System Configuration:
+  CPU Clock:     100 MHz
+  CNN Clock:     50 MHz
+  Sample Rate:   16000 Hz
+  Sample Size:   16384 bytes (1.02 sec)
+  Preamble:      3840 bytes
+  Num Classes:   21
+  Threshold:     High=350, Low=100
+  Confidence:    91%
+========================================
+*** READY ***
+
+=========== Inference #1 ===========
+Timing Breakdown (clock cycles @ 100MHz):
+  Data Load:    1068 cycles (10 us)
+  CNN Inference:1445 cycles (14 us)
+  Data Unload:  6 cycles (0 us)
+  Softmax:      11 cycles (0 us)
+  Total:        25 us
+
+Audio Stats - Min: -27, Max: 38
+Utterance Avg: 477 (Threshold: 350)
+Zero Padding: 0 samples
+
+Top Predictions:
+  1. ONE: 100.00%
+  2. Unknown: 0.00%
+  3. ON: 0.00%
+
+>>> RESULT: ONE (100.0%)
+
+Session Stats: 1 recognized, 0 unknown, avg 25 us/inference
+=====================================
+
+=========== Inference #2 ===========
+Timing Breakdown (clock cycles @ 100MHz):
+  Data Load:    1068 cycles (10 us)
+  CNN Inference:1445 cycles (14 us)
+  Data Unload:  6 cycles (0 us)
+  Softmax:      11 cycles (0 us)
+  Total:        25 us
+
+Audio Stats - Min: -15, Max: 17
+Utterance Avg: 446 (Threshold: 350)
+Zero Padding: 0 samples
+
+Top Predictions:
+  1. TWO: 95.09%
+  2. ZERO: 2.97%
+  3. SIX: 1.48%
+
+>>> RESULT: TWO (95.1%)
+
+Session Stats: 2 recognized, 0 unknown, avg 25 us/inference
+=====================================
+
+=========== Inference #3 ===========
+Timing Breakdown (clock cycles @ 100MHz):
+  Data Load:    1068 cycles (10 us)
+  CNN Inference:1445 cycles (14 us)
+  Data Unload:  6 cycles (0 us)
+  Softmax:      11 cycles (0 us)
+  Total:        25 us
+
+Audio Stats - Min: -10, Max: 12
+Utterance Avg: 355 (Threshold: 350)
+Zero Padding: 0 samples
+
+Top Predictions:
+  1. THREE: 79.40%
+  2. TWO: 19.85%
+  3. SIX: 0.62%
+
+>>> RESULT: Unknown (below 91% threshold)
+
+Session Stats: 2 recognized, 1 unknown, avg 25 us/inference
+=====================================
+ERROR: Transpose ended early (utterance wrap 2)
+
+=========== Inference #4 ===========
+Timing Breakdown (clock cycles @ 100MHz):
+  Data Load:    1068 cycles (10 us)
+  CNN Inference:1445 cycles (14 us)
+  Data Unload:  6 cycles (0 us)
+  Softmax:      12 cycles (0 us)
+  Total:        25 us
+
+Audio Stats - Min: -14, Max: 20
+Utterance Avg: 374 (Threshold: 350)
+Zero Padding: 0 samples
+
+Top Predictions:
+  1. UP: 4.76%
+  2. DOWN: 4.76%
+  3. LEFT: 4.76%
+
+>>> RESULT: Unknown (below 91% threshold)
+
+Session Stats: 2 recognized, 2 unknown, avg 25 us/inference
+=====================================
+
+=========== Inference #5 ===========
+Timing Breakdown (clock cycles @ 100MHz):
+  Data Load:    1068 cycles (10 us)
+  CNN Inference:1445 cycles (14 us)
+  Data Unload:  6 cycles (0 us)
+  Softmax:      11 cycles (0 us)
+  Total:        25 us
+
+Audio Stats - Min: -18, Max: 15
+Utterance Avg: 457 (Threshold: 350)
+Zero Padding: 0 samples
+
+Top Predictions:
+  1. FIVE: 99.73%
+  2. ON: 0.19%
+  3. Unknown: 0.05%
+
+>>> RESULT: FIVE (99.7%)
+
+Session Stats: 3 recognized, 2 unknown, avg 25 us/inference
+=====================================
+
+=========== Inference #6 ===========
+Timing Breakdown (clock cycles @ 100MHz):
+  Data Load:    1068 cycles (10 us)
+  CNN Inference:1445 cycles (14 us)
+  Data Unload:  6 cycles (0 us)
+  Softmax:      11 cycles (0 us)
+  Total:        25 us
+
+Audio Stats - Min: -13, Max: 13
+Utterance Avg: 371 (Threshold: 350)
+Zero Padding: 0 samples
+
+Top Predictions:
+  1. SIX: 100.00%
+  2. EIGHT: 0.00%
+  3. YES: 0.00%
+
+>>> RESULT: SIX (100.0%)
+
+Session Stats: 4 recognized, 2 unknown, avg 25 us/inference
+=====================================
+
+=========== Inference #7 ===========
+Timing Breakdown (clock cycles @ 100MHz):
+  Data Load:    1068 cycles (10 us)
+  CNN Inference:1445 cycles (14 us)
+  Data Unload:  6 cycles (0 us)
+  Softmax:      11 cycles (0 us)
+  Total:        25 us
+
+Audio Stats - Min: -19, Max: 23
+Utterance Avg: 455 (Threshold: 350)
+Zero Padding: 0 samples
+
+Top Predictions:
+  1. EIGHT: 100.00%
+  2. UP: 0.00%
+  3. Unknown: 0.00%
+
+>>> RESULT: EIGHT (100.0%)
+
+Session Stats: 5 recognized, 2 unknown, avg 25 us/inference
+=====================================
+
+=========== Inference #8 ===========
+Timing Breakdown (clock cycles @ 100MHz):
+  Data Load:    1068 cycles (10 us)
+  CNN Inference:1445 cycles (14 us)
+  Data Unload:  6 cycles (0 us)
+  Softmax:      12 cycles (0 us)
+  Total:        25 us
+
+Audio Stats - Min: -45, Max: 39
+Utterance Avg: 373 (Threshold: 350)
+Zero Padding: 0 samples
+
+Top Predictions:
+  1. GO: 32.16%
+  2. Unknown: 8.04%
+  3. TWO: 8.04%
+
+>>> RESULT: Unknown (below 91% threshold)
+
+Session Stats: 5 recognized, 3 unknown, avg 25 us/inference
+=====================================
+ERROR: Transpose ended early (utterance wrap 2)
+
+=========== Inference #9 ===========
+Timing Breakdown (clock cycles @ 100MHz):
+  Data Load:    1068 cycles (10 us)
+  CNN Inference:1445 cycles (14 us)
+  Data Unload:  6 cycles (0 us)
+  Softmax:      12 cycles (0 us)
+  Total:        25 us
+
+Audio Stats - Min: -128, Max: 127
+Utterance Avg: 388 (Threshold: 350)
+Zero Padding: 0 samples
+
+Top Predictions:
+  1. UP: 4.76%
+  2. DOWN: 4.76%
+  3. LEFT: 4.76%
+
+>>> RESULT: Unknown (below 91% threshold)
+
+Session Stats: 5 recognized, 4 unknown, avg 25 us/inference
+=====================================
+
+=========== Inference #10 ===========
+Timing Breakdown (clock cycles @ 100MHz):
+  Data Load:    1068 cycles (10 us)
+  CNN Inference:1445 cycles (14 us)
+  Data Unload:  6 cycles (0 us)
+  Softmax:      11 cycles (0 us)
+  Total:        25 us
+
+Audio Stats - Min: -128, Max: 127
+Utterance Avg: 397 (Threshold: 350)
+Zero Padding: 0 samples
+
+Top Predictions:
+  1. UP: 64.80%
+  2. LEFT: 16.20%
+  3. ONE: 16.20%
+
+>>> RESULT: Unknown (below 91% threshold)
+
+Session Stats: 5 recognized, 5 unknown, avg 25 us/inference
+=====================================
+Stopped.
+
+============ SESSION SUMMARY ============
+Total Samples: 528768
+Total Inferences: 10
+  Recognized: 5 (50.0%)
+  Unknown: 5 (50.0%)
+Timing Statistics:
+  Min: 25 us
+  Max: 25 us
+  Avg: 25 us
+=========================================
