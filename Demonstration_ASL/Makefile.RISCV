@@ -83,7 +83,7 @@ VPATH += $(CMSIS_ROOT)/Device/Maxim/$(TARGET_UC)/Source
 IPATH  = .
 
 # Enable all warnings
-PROJ_CFLAGS+=-Wall -Wcast-align -DMXC_ASSERT_ENABLE -DRV32 
+PROJ_CFLAGS+=-Wall -Wcast-align -DMXC_ASSERT_ENABLE -DRV32 -DCNN_INFERENCE_TIMER 
 
 # Specify STACK SIZE
 STACK_SIZE=1024
@@ -122,6 +122,10 @@ include $(BOARD_DIR)/board.mk
 PERIPH_DRIVER_DIR=$(LIBS_DIR)/PeriphDrivers
 include $(PERIPH_DRIVER_DIR)/periphdriver.mk
 export PERIPH_DRIVER_DIR
+
+# Include the camera driver
+CAMERA_DIR=$(LIBS_DIR)/MiscDrivers/Camera
+include $(CAMERA_DIR)/camera.mk
 
 ################################################################################
 # Include the rules for building for this target. All other makefiles should be

@@ -38,10 +38,19 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h>
 #include "mxc.h"
+#include "mxc_delay.h"
 #include "gcfr_regs.h"
 #include "fcr_regs.h"
 #include "sema_regs.h"
+#include "board.h"
+#include "dma.h"
+#include "uart.h"
+
+/* UART Configuration for Console Output */
+#define CONSOLE_UART        MXC_UART0
+#define CONSOLE_BAUD        115200
 
 extern volatile void const *__FlashStart_; // Defined in linker file
 
@@ -52,22 +61,47 @@ void WakeISR(void)
 
 int main(void)
 {
+  int ret;
+
+  // Wait for PMIC 1.8V to become available (~180ms after power up)
+  MXC_Delay(200000);
+
   MXC_ICC_Enable(MXC_ICC0); // Enable cache
 
   // Switch to 100 MHz clock
   MXC_SYS_Clock_Select(MXC_SYS_CLOCK_IPO);
   SystemCoreClockUpdate();
 
+  // Initialize UART for console output (COM6 @ 115200)
+  ret = MXC_UART_Init(CONSOLE_UART, CONSOLE_BAUD, MXC_UART_APB_CLK);
+  if (ret != E_NO_ERROR) {
+      // UART init failed - blink LED
+      while(1) {}
+  }
+
+  // Enable camera power on FTHR_RevA board
+  Camera_Power(POWER_ON);
+
+  printf("\n*** ARM Core: ASL Recognition Demo ***\n");
+  printf("Camera power enabled, starting RISC-V core...\n");
+  fflush(stdout);
+
   MXC_FCR->urvbootaddr = (uint32_t) &__FlashStart_; // Set RISC-V boot address
   MXC_SYS_ClockEnable(MXC_SYS_PERIPH_CLOCK_SMPHR); // Enable Semaphore clock
   MXC_NVIC_SetVector(RISCV_IRQn, WakeISR); // Set wakeup ISR
 
-  // DO NOT DELETE THIS LINE:
-  MXC_Delay(SEC(2)); // Let debugger interrupt if needed
+  // Delay for debugger
+  for (int i = 0; i < (1 << 25); i++) {}
 
-  MXC_SYS_ClockEnable(MXC_SYS_PERIPH_CLOCK_CPU1); // Enable RISC-V clock
+  // Enable RISC-V clock (using direct register access)
+  MXC_GCR->pclkdis1 &= ~MXC_F_GCR_PCLKDIS1_CPU1;
 
-  MXC_LP_EnterSleepMode(); // Let RISC-V run
+  printf("RISC-V core started. ARM entering wait mode.\n\n");
+  fflush(stdout);
+
+  while (1) {
+    __WFI(); // Wait For Interrupt - let RISC-V run
+  }
 
   return 0;
 }

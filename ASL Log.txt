@@ -1,0 +1,444 @@
+
+*** ARM Core: ASL Recognition Demo ***
+Camera power enabled, starting RISC-V core...
+RISC-V core started. ARM entering wait mode.
+
+
+========================================================
+     ASL Recognition Demo - RISC-V Core (MAX78000)
+========================================================
+System Configuration:
+  Core:           RISC-V
+  Image Size:     64x64 (RGB)
+  Input Format:   CHW (3x64x64)
+  Num Classes:    27 (A-Z + Unknown)
+  CNN Clock:      50 MHz (APB div 1)
+  Confidence:     50% threshold
+========================================================
+
+Initializing CNN accelerator...
+  Weights loaded: 336,688 bytes (76.1% of capacity)
+  Bias loaded:    811 bytes (39.6% of capacity)
+  Total ops:      19,893,632 (19.58M MACC)
+
+Initializing camera...
+  DMA channel:    0
+  I2C address:    0x3C
+  Camera ID:      0x7FA2
+  Resolution:     168x120 (capture) -> 64x64 (CNN)
+  Pixel format:   BAYER
+
+========================================================
+*** READY - Running 20 inferences ***
+========================================================
+
+=========== Inference #1 ===========
+Timing Breakdown:
+  Capture:        86908 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3249 us
+  Unload:         11 us
+  Softmax:        53 us
+  Total:          95012 us (95.1 ms)
+
+Top-3 Predictions:
+  1. 'A': 47% [raw: 105212]
+  2. 'Y': 5% [raw: 63568]
+  3. 'X': 5% [raw: 58392]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 0 recognized, 1 unknown
+Timing: min=95012 us, max=95012 us, avg=95012 us
+=====================================
+
+=========== Inference #2 ===========
+Timing Breakdown:
+  Capture:        59038 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          67137 us (67.13 ms)
+
+Top-3 Predictions:
+  1. 'A': 31% [raw: 150296]
+  2. 'C': 31% [raw: 147160]
+  3. 'B': 31% [raw: 145744]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 0 recognized, 2 unknown
+Timing: min=67137 us, max=95012 us, avg=81074 us
+=====================================
+
+=========== Inference #3 ===========
+Timing Breakdown:
+  Capture:        58612 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          66711 us (66.71 ms)
+
+Top-3 Predictions:
+  1. 'A': 68% [raw: 174552]
+  2. 'C': 17% [raw: 141288]
+  3. 'B': 8% [raw: 129600]
+
+>>> RESULT: 'A' (68%)
+
+Session Stats: 1 recognized, 2 unknown
+Timing: min=66711 us, max=95012 us, avg=76286 us
+=====================================
+
+=========== Inference #4 ===========
+Timing Breakdown:
+  Capture:        92616 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100715 us (100.71 ms)
+
+Top-3 Predictions:
+  1. 'A': 87% [raw: 192556]
+  2. 'B': 5% [raw: 132032]
+  3. 'C': 5% [raw: 122900]
+
+>>> RESULT: 'A' (87%)
+
+Session Stats: 2 recognized, 2 unknown
+Timing: min=66711 us, max=100715 us, avg=82393 us
+=====================================
+
+=========== Inference #5 ===========
+Timing Breakdown:
+  Capture:        92446 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100545 us (100.54 ms)
+
+Top-3 Predictions:
+  1. 'A': 63% [raw: 178572]
+  2. 'B': 15% [raw: 143296]
+  3. 'C': 15% [raw: 138684]
+
+>>> RESULT: 'A' (63%)
+
+Session Stats: 3 recognized, 2 unknown
+Timing: min=66711 us, max=100715 us, avg=86024 us
+=====================================
+
+=========== Inference #6 ===========
+Timing Breakdown:
+  Capture:        92276 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100375 us (100.37 ms)
+
+Top-3 Predictions:
+  1. 'A': 57% [raw: 180108]
+  2. 'C': 28% [raw: 162860]
+  3. 'B': 7% [raw: 126280]
+
+>>> RESULT: 'A' (57%)
+
+Session Stats: 4 recognized, 2 unknown
+Timing: min=66711 us, max=100715 us, avg=88415 us
+=====================================
+
+=========== Inference #7 ===========
+Timing Breakdown:
+  Capture:        92358 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100457 us (100.45 ms)
+
+Top-3 Predictions:
+  1. 'A': 39% [raw: 161072]
+  2. 'B': 39% [raw: 156788]
+  3. 'C': 19% [raw: 138580]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 4 recognized, 3 unknown
+Timing: min=66711 us, max=100715 us, avg=90136 us
+=====================================
+
+=========== Inference #8 ===========
+Timing Breakdown:
+  Capture:        58360 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          66459 us (66.45 ms)
+
+Top-3 Predictions:
+  1. 'A': 79% [raw: 165224]
+  2. 'Unknown': 9% [raw: 115532]
+  3. 'C': 4% [raw: 93276]
+
+>>> RESULT: 'A' (79%)
+
+Session Stats: 5 recognized, 3 unknown
+Timing: min=66459 us, max=100715 us, avg=87176 us
+=====================================
+
+=========== Inference #9 ===========
+Timing Breakdown:
+  Capture:        92189 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100288 us (100.28 ms)
+
+Top-3 Predictions:
+  1. 'A': 68% [raw: 172172]
+  2. 'B': 17% [raw: 132592]
+  3. 'C': 8% [raw: 126088]
+
+>>> RESULT: 'A' (68%)
+
+Session Stats: 6 recognized, 3 unknown
+Timing: min=66459 us, max=100715 us, avg=88633 us
+=====================================
+
+=========== Inference #10 ===========
+Timing Breakdown:
+  Capture:        92271 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100370 us (100.37 ms)
+
+Top-3 Predictions:
+  1. 'A': 45% [raw: 152884]
+  2. 'C': 22% [raw: 141172]
+  3. 'B': 22% [raw: 134884]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 6 recognized, 4 unknown
+Timing: min=66459 us, max=100715 us, avg=89806 us
+=====================================
+
+=========== Inference #11 ===========
+Timing Breakdown:
+  Capture:        58272 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          66371 us (66.37 ms)
+
+Top-3 Predictions:
+  1. 'A': 70% [raw: 164920]
+  2. 'B': 17% [raw: 128344]
+  3. 'C': 8% [raw: 113948]
+
+>>> RESULT: 'A' (70%)
+
+Session Stats: 7 recognized, 4 unknown
+Timing: min=66371 us, max=100715 us, avg=87676 us
+=====================================
+
+=========== Inference #12 ===========
+Timing Breakdown:
+  Capture:        92449 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100548 us (100.54 ms)
+
+Top-3 Predictions:
+  1. 'A': 36% [raw: 143860]
+  2. 'B': 36% [raw: 139048]
+  3. 'C': 18% [raw: 125640]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 7 recognized, 5 unknown
+Timing: min=66371 us, max=100715 us, avg=88749 us
+=====================================
+
+=========== Inference #13 ===========
+Timing Breakdown:
+  Capture:        58266 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          66365 us (66.36 ms)
+
+Top-3 Predictions:
+  1. 'A': 53% [raw: 166136]
+  2. 'B': 26% [raw: 151588]
+  3. 'C': 13% [raw: 140588]
+
+>>> RESULT: 'A' (53%)
+
+Session Stats: 8 recognized, 5 unknown
+Timing: min=66365 us, max=100715 us, avg=87027 us
+=====================================
+
+=========== Inference #14 ===========
+Timing Breakdown:
+  Capture:        92357 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100456 us (100.45 ms)
+
+Top-3 Predictions:
+  1. 'A': 55% [raw: 163612]
+  2. 'C': 27% [raw: 141644]
+  3. 'Unknown': 6% [raw: 120940]
+
+>>> RESULT: 'A' (55%)
+
+Session Stats: 9 recognized, 5 unknown
+Timing: min=66365 us, max=100715 us, avg=87986 us
+=====================================
+
+=========== Inference #15 ===========
+Timing Breakdown:
+  Capture:        91752 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          99851 us (99.85 ms)
+
+Top-3 Predictions:
+  1. 'B': 56% [raw: 161628]
+  2. 'C': 28% [raw: 141288]
+  3. 'A': 7% [raw: 112540]
+
+>>> RESULT: 'B' (56%)
+
+Session Stats: 10 recognized, 5 unknown
+Timing: min=66365 us, max=100715 us, avg=88777 us
+=====================================
+
+=========== Inference #16 ===========
+Timing Breakdown:
+  Capture:        92355 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100454 us (100.45 ms)
+
+Top-3 Predictions:
+  1. 'B': 53% [raw: 146244]
+  2. 'C': 26% [raw: 130980]
+  3. 'A': 13% [raw: 119788]
+
+>>> RESULT: 'B' (53%)
+
+Session Stats: 11 recognized, 5 unknown
+Timing: min=66365 us, max=100715 us, avg=89507 us
+=====================================
+
+=========== Inference #17 ===========
+Timing Breakdown:
+  Capture:        92099 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100198 us (100.19 ms)
+
+Top-3 Predictions:
+  1. 'A': 87% [raw: 180704]
+  2. 'C': 5% [raw: 119428]
+  3. 'B': 2% [raw: 105876]
+
+>>> RESULT: 'A' (87%)
+
+Session Stats: 12 recognized, 5 unknown
+Timing: min=66365 us, max=100715 us, avg=90136 us
+=====================================
+
+=========== Inference #18 ===========
+Timing Breakdown:
+  Capture:        92276 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100375 us (100.37 ms)
+
+Top-3 Predictions:
+  1. 'A': 54% [raw: 174372]
+  2. 'C': 27% [raw: 150536]
+  3. 'B': 6% [raw: 128772]
+
+>>> RESULT: 'A' (54%)
+
+Session Stats: 13 recognized, 5 unknown
+Timing: min=66365 us, max=100715 us, avg=90704 us
+=====================================
+
+=========== Inference #19 ===========
+Timing Breakdown:
+  Capture:        92185 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100284 us (100.28 ms)
+
+Top-3 Predictions:
+  1. 'A': 78% [raw: 184588]
+  2. 'B': 9% [raw: 138596]
+  3. 'C': 9% [raw: 132532]
+
+>>> RESULT: 'A' (78%)
+
+Session Stats: 14 recognized, 5 unknown
+Timing: min=66365 us, max=100715 us, avg=91209 us
+=====================================
+
+=========== Inference #20 ===========
+Timing Breakdown:
+  Capture:        92275 us
+  Preprocess/Load:4791 us
+  CNN Inference:  3248 us
+  Unload:         11 us
+  Softmax:        49 us
+  Total:          100374 us (100.37 ms)
+
+Top-3 Predictions:
+  1. 'A': 69% [raw: 176904]
+  2. 'C': 17% [raw: 139008]
+  3. 'B': 8% [raw: 132020]
+
+>>> RESULT: 'A' (69%)
+
+Session Stats: 15 recognized, 5 unknown
+Timing: min=66365 us, max=100715 us, avg=91667 us
+=====================================
+
+
+============ SESSION SUMMARY ============
+Total Inferences: 20
+  Recognized: 15 (75%)
+  Unknown:    5 (25%)
+Timing Statistics:
+  Min: 66365 us (66.36 ms)
+  Max: 100715 us (100.71 ms)
+  Avg: 91667 us (91.66 ms)
+=========================================
