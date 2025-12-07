@@ -166,7 +166,7 @@ CIFAR10 (32x32):
   Overhead Breakdown (measured):
     - load_input:      344 us
     - cnn_init:        5 us
-    - cnn_load_weights:36682 us
+    - cnn_load_weights:356682 us
     - cnn_load_bias:   341 us
     - cnn_configure:   234 us
     - cnn_unload:      5 us

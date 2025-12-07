@@ -104,6 +104,8 @@ static uint32_t measured_configure_time_us = 0;
 static uint32_t measured_unload_time_us = 0;
 static uint32_t measured_softmax_time_us = 0;
 static uint32_t measured_load_input_time_us = 0;
+static uint32_t measured_load_weights_time_us = 0;
+static uint32_t measured_load_bias_time_us = 0;
 
 // ============================================================================
 // Queue Functions
@@ -380,7 +382,6 @@ static void run_benchmark(uint32_t num_images) {
     const float npu_freq_mhz = 50.0f;        // NPU clock frequency (Up to 50MHz)
     const uint32_t num_processors = 64;      // Number of parallel processors
     
-    // CORRECTION:
     // The accelerator outputs "Nominal 1 output channel per clock"
     // For a 3x3 kernel, this requires 9 MACs per clock cycle.
     // 1 MAC = 2 Operations (Multiply + Add)
@@ -501,10 +502,16 @@ int main(void) {
     printf("[INIT] Loading ResNetV2-18...");
     cnn_enable(MXC_S_GCR_PCLKDIV_CNNCLKSEL_PCLK, MXC_S_GCR_PCLKDIV_CNNCLKDIV_DIV1);
     cnn_init();
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
     cnn_load_weights();
+    measured_load_weights_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
     cnn_load_bias();
+    measured_load_bias_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
     cnn_configure();
     printf(" OK\n");
+    printf("[INIT] Load Weights Time: %lu us\n", measured_load_weights_time_us);
+    printf("[INIT] Load Bias Time: %lu us\n", measured_load_bias_time_us);
     
     uint32_t pclk_freq = SystemCoreClock / 2;
     printf("[INIT] NPU Freq: %lu MHz (PCLK)\n", pclk_freq / 1000000);

@@ -121,6 +121,8 @@ static uint32_t measured_configure_time_us = 0;
 static uint32_t measured_unload_time_us = 0;
 static uint32_t measured_softmax_time_us = 0;
 static uint32_t measured_load_input_time_us = 0;
+static uint32_t measured_load_weights_time_us = 0;
+static uint32_t measured_load_bias_time_us = 0;
 
 static inline int queue_is_full(void) { return queue_count >= MAX_QUEUE_SIZE; }
 static inline int queue_is_empty(void) { return queue_count == 0; }
@@ -491,10 +493,16 @@ int main(void) {
     printf("[INIT] Loading MobileNetV2...");
     cnn_enable(MXC_S_GCR_PCLKDIV_CNNCLKSEL_PCLK, MXC_S_GCR_PCLKDIV_CNNCLKDIV_DIV1);
     cnn_init();
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
     cnn_load_weights();
+    measured_load_weights_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
+    MXC_TMR_SW_Start(CNN_INFERENCE_TIMER);
     cnn_load_bias();
+    measured_load_bias_time_us = MXC_TMR_SW_Stop(CNN_INFERENCE_TIMER);
     cnn_configure();
     printf(" OK\n");
+    printf("[INIT] Load Weights Time: %lu us\n", measured_load_weights_time_us);
+    printf("[INIT] Load Bias Time: %lu us\n", measured_load_bias_time_us);
     
     uint32_t pclk_freq = SystemCoreClock / 2;
     printf("[INIT] NPU Freq: %lu MHz (PCLK)\n", pclk_freq / 1000000);
