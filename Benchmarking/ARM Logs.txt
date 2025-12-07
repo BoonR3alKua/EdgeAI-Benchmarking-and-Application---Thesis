@@ -1,29 +1,31 @@
 CIFAR100 (32x32):
 ============================================================
-          BENCHMARK REPORT - SimpleNet
+          BENCHMARK REPORT - SimpleNet                      
 ============================================================
 [BASIC STATISTICS]
   Total Images:        30
   Correct:             4/30 (13.3%)
-  Avg Confidence:      40.3%
+  Avg Confidence:      39.1%
 ------------------------------------------------------------
 [LATENCY METRICS]
-  Core Latency (NPU):  2596.40 us (2.596 ms)
-  System Latency:      3023.40 us (3.023 ms)
-  Min Latency:         2595 us
+  Core Latency (NPU):  2597.00 us (2.597 ms)
+  System Latency:      3022.00 us (3.022 ms)
+  Min Latency:         2597 us
   Max Latency:         2597 us
-  Latency Jitter:      2 us
+  Latency Jitter:      0 us
   --- Measured Overhead ---
+  Load Weights:        26201 us
+  Load Bias:           322 us
   Load Input:          202 us
-  CNN Init:            5 us
+  CNN Init:            3 us
   CNN Configure:       145 us
   CNN Unload:          29 us
   Softmax:             46 us
-  Total Overhead:      427.00 us
+  Total Overhead:      425.00 us
 ------------------------------------------------------------
 [THROUGHPUT METRICS]
-  Throughput:          385.15 FPS
-  Total Time:          77.89 ms (30 images)
+  Throughput:          385.06 FPS
+  Total Time:          77.91 ms (30 images)
 ------------------------------------------------------------
 [TOPS ANALYSIS]
   Peak TOPS:           0.0576 TOPS (theoretical max)
@@ -39,14 +41,14 @@ CIFAR100 (32x32):
   Input Size:          3072 bytes
   Output Size:         400 bytes
   Data Movement:       3472 bytes/inference
-  Bandwidth Used:      1.28 MB/s
+  Bandwidth Used:      1.27 MB/s
   Arithmetic Intensity:48.0 ops/byte
   Ops/Byte Moved:      5359.4 ops/byte
 ------------------------------------------------------------
 [VERDICT]
   NPU Efficiency:      LOW (<20%)
   Accuracy:            PARTIAL
-============================================================
+=============================================================
 
 ============================================================
           BENCHMARK REPORT - MobileNetV2
@@ -57,21 +59,23 @@ CIFAR100 (32x32):
   Avg Confidence:      36.4%
 ------------------------------------------------------------
 [LATENCY METRICS]
-  Core Latency (NPU):  1516.00 us (1.516 ms)
-  System Latency:      2024.00 us (2.024 ms)
-  Min Latency:         1516 us
+  Core Latency (NPU):  1515.97 us (1.516 ms)
+  System Latency:      2023.97 us (2.024 ms)
+  Min Latency:         1515 us
   Max Latency:         1516 us
-  Latency Jitter:      0 us
+  Latency Jitter:      1 us
   --- Measured Overhead ---
-  Load Input:          202 us
-  CNN Init:            3 us
+  Load Weights:        8558 us
+  Load Bias:           203 us
+  Load Input:          200 us
+  CNN Init:            5 us
   CNN Configure:       230 us
   CNN Unload:          29 us
   Softmax:             44 us
   Total Overhead:      508.00 us
 ------------------------------------------------------------
 [THROUGHPUT METRICS]
-  Throughput:          659.63 FPS
+  Throughput:          659.65 FPS
   Total Time:          45.48 ms (30 images)
 ------------------------------------------------------------
 [TOPS ANALYSIS]
@@ -106,21 +110,23 @@ CIFAR100 (32x32):
   Avg Confidence:      54.6%
 ------------------------------------------------------------
 [LATENCY METRICS]
-  Core Latency (NPU):  2409.93 us (2.410 ms)
-  System Latency:      2892.93 us (2.893 ms)
-  Min Latency:         2408 us
+  Core Latency (NPU):  2410.00 us (2.410 ms)
+  System Latency:      2895.00 us (2.895 ms)
+  Min Latency:         2410 us
   Max Latency:         2410 us
-  Latency Jitter:      2 us
+  Latency Jitter:      0 us
   --- Measured Overhead ---
+  Load Weights:        19484 us
+  Load Bias:           252 us
   Load Input:          202 us
-  CNN Init:            3 us
+  CNN Init:            5 us
   CNN Configure:       204 us
   CNN Unload:          28 us
   Softmax:             46 us
-  Total Overhead:      483.00 us
+  Total Overhead:      485.00 us
 ------------------------------------------------------------
 [THROUGHPUT METRICS]
-  Throughput:          414.95 FPS
+  Throughput:          414.94 FPS
   Total Time:          72.30 ms (30 images)
 ------------------------------------------------------------
 [TOPS ANALYSIS]
@@ -156,17 +162,19 @@ CIFAR10 (32x32):
 ------------------------------------------------------------
 [LATENCY METRICS]
   Core Latency (NPU):  3183.97 us (3.184 ms)
-  System Latency:      3614.97 us (3.615 ms)
+  System Latency:      3611.97 us (3.612 ms)
   Min Latency:         3183 us
   Max Latency:         3184 us
   Latency Jitter:      1 us
   --- Measured Overhead ---
+  Load Weights:        22990 us
+  Load Bias:           211 us
   Load Input:          202 us
-  CNN Init:            5 us
+  CNN Init:            3 us
   CNN Configure:       213 us
   CNN Unload:          3 us
-  Softmax:             8 us
-  Total Overhead:      431.00 us
+  Softmax:             7 us
+  Total Overhead:      428.00 us
 ------------------------------------------------------------
 [THROUGHPUT METRICS]
   Throughput:          314.07 FPS
@@ -199,27 +207,29 @@ CIFAR10 (64x64):
         BENCHMARK REPORT - AlexNet-Small (64x64)
 ============================================================
 [BASIC STATISTICS]
-  Total Images:        8
-  Correct:             8/8 (100.0%)
+  Total Images:        8 (queued) x 5 loops = 40 inferences
+  Correct:             40/40 (100.0%)
   Avg Confidence:      85.1%
 ------------------------------------------------------------
 [LATENCY METRICS]
-  Core Latency (NPU):  1924.88 us (1.925 ms)
-  System Latency:      2830.88 us (2.831 ms)
+  Core Latency (NPU):  1925.65 us (1.926 ms)
+  System Latency:      2828.65 us (2.829 ms)
   Min Latency:         1923 us
   Max Latency:         1926 us
   Latency Jitter:      3 us
   --- Measured Overhead ---
-  Load Input:          801 us
+  Load Weights:        12473 us
+  Load Bias:           181 us
+  Load Input:          800 us
   CNN Init:            3 us
-  CNN Configure:       89 us
-  CNN Unload:          5 us
-  Softmax:             8 us
-  Total Overhead:      906.00 us
+  CNN Configure:       90 us
+  CNN Unload:          3 us
+  Softmax:             7 us
+  Total Overhead:      903.00 us
 ------------------------------------------------------------
 [THROUGHPUT METRICS]
-  Throughput:          519.51 FPS
-  Total Time:          15.40 ms (8 images)
+  Throughput:          519.31 FPS
+  Total Time:          77.03 ms (40 inferences)
 ------------------------------------------------------------
 [TOPS ANALYSIS]
   Peak TOPS:           0.0576 TOPS (theoretical max)
@@ -248,27 +258,29 @@ ASL27 (64x64):
         BENCHMARK REPORT - ASL ResNetV2-18 (64x64)
 ============================================================
 [BASIC STATISTICS]
-  Total Images:        8
-  Correct:             8/8 (100.0%)
-  Avg Confidence:      99.8%
+  Total Images:        8 (queued) x 5 loops = 40 inferences
+  Correct:             40/40 (100.0%)
+  Avg Confidence:      99.7%
 ------------------------------------------------------------
 [LATENCY METRICS]
   Core Latency (NPU):  3246.00 us (3.246 ms)
   System Latency:      4288.00 us (4.288 ms)
-  Overhead Breakdown (measured):
-    - load_input:      800 us
-    - cnn_init:        3 us
-    - cnn_configure:   216 us
-    - cnn_unload:      8 us
-    - softmax:         15 us
-    - total overhead:  1042 us
   Min Latency:         3246 us
   Max Latency:         3246 us
   Latency Jitter:      0 us
+  --- Measured Overhead ---
+  Load Weights:        23111 us
+  Load Bias:           215 us
+  Load Input:          800 us
+  CNN Init:            3 us
+  CNN Configure:       216 us
+  CNN Unload:          8 us
+  Softmax:             15 us
+  Total Overhead:      1042 us
 ------------------------------------------------------------
 [THROUGHPUT METRICS]
   Throughput:          308.07 FPS
-  Total Time:          25.97 ms (8 images)
+  Total Time:          129.84 ms (40 inferences)
 ------------------------------------------------------------
 [TOPS ANALYSIS]
   Peak TOPS:           0.0576 TOPS (theoretical max)
@@ -294,30 +306,32 @@ ASL27 (64x64):
 ============================================================
 
 ============================================================
-        BENCHMARK REPORT - ASL AlexNet-Small (64x64)        
+        BENCHMARK REPORT - ASL AlexNet-Small (64x64)
 ============================================================
 [BASIC STATISTICS]
-  Total Images:        8
-  Correct:             7/8 (87.5%)
+  Total Images:        8 (queued) x 5 loops = 40 inferences
+  Correct:             40/40 (100.0%)
   Avg Confidence:      100.0%
 ------------------------------------------------------------
 [LATENCY METRICS]
-  Core Latency (NPU):  1925.88 us (1.926 ms)
-  System Latency:      2840.88 us (2.841 ms)
-  Overhead Breakdown (measured):
-    - load_input:      800 us
-    - cnn_init:        3 us
-    - cnn_configure:   89 us
-    - cnn_unload:      8 us
-    - softmax:         15 us
-    - total overhead:  915 us
-  Min Latency:         1925 us
+  Core Latency (NPU):  1926.00 us (1.926 ms)
+  System Latency:      2841.00 us (2.841 ms)
+  Min Latency:         1926 us
   Max Latency:         1926 us
-  Latency Jitter:      1 us
+  Latency Jitter:      0 us
+  --- Measured Overhead ---
+  Load Weights:        12596 us
+  Load Bias:           185 us
+  Load Input:          800 us
+  CNN Init:            3 us
+  CNN Configure:       89 us
+  CNN Unload:          8 us
+  Softmax:             15 us
+  Total Overhead:      915 us
 ------------------------------------------------------------
 [THROUGHPUT METRICS]
-  Throughput:          519.24 FPS
-  Total Time:          15.41 ms (8 images)
+  Throughput:          519.21 FPS
+  Total Time:          77.04 ms (40 inferences)
 ------------------------------------------------------------
 [TOPS ANALYSIS]
   Peak TOPS:           0.0576 TOPS (theoretical max)
@@ -339,5 +353,5 @@ ASL27 (64x64):
 ------------------------------------------------------------
 [VERDICT]
   NPU Efficiency:      MODERATE (20-40%)
-  Accuracy:            PARTIAL
+  Accuracy:            PERFECT
 ============================================================

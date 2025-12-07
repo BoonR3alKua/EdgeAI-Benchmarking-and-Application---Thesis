@@ -82,6 +82,9 @@ int main(void)
   // Enable camera power on FTHR_RevA board
   Camera_Power(POWER_ON);
 
+  // Enable DMA clock (required for RISC-V to use DMA for camera)
+  MXC_SYS_ClockEnable(MXC_SYS_PERIPH_CLOCK_DMA);
+
   printf("\n*** ARM Core: ASL Recognition Demo ***\n");
   printf("Camera power enabled, starting RISC-V core...\n");
   fflush(stdout);

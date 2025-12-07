@@ -538,6 +538,8 @@ void run_benchmark(uint32_t num_images)
     printf("  Max Latency:         %lu us\n", max_time);
     printf("  Latency Jitter:      %lu us\n", max_time - min_time);
     printf("  --- Measured Overhead ---\n");
+    printf("  Load Weights:        %lu us\n", measured_load_weights_time_us);
+    printf("  Load Bias:           %lu us\n", measured_load_bias_time_us);
     printf("  Load Input:          %lu us\n", measured_load_input_time_us);
     printf("  CNN Init:            %lu us\n", measured_init_time_us);
     printf("  CNN Configure:       %lu us\n", measured_configure_time_us);

@@ -65,6 +65,7 @@ extern void softmax_q17p14_q15(const q31_t *vec_in, const uint16_t dim_vec, q15_
 #define IMAGE_BYTES         12288   // 64x64x3 bytes total
 #define MAX_QUEUE_SIZE      8       // Limited by SRAM (64x64 images are larger)
 #define WARMUP_ITERATIONS   2
+#define BENCHMARK_LOOPS     5       // Number of times to loop through queue
 #define TIMEOUT_LOOPS       100000000
 
 // ============================================================================
@@ -330,44 +331,49 @@ static void run_benchmark(uint32_t num_images) {
     uint32_t min_time = 0xFFFFFFFF, max_time = 0;
     uint32_t correct_count = 0;
     float total_confidence = 0.0f;
+    uint32_t total_inferences = num_images * BENCHMARK_LOOPS;
     
-    printf("[BENCH] Start Loop (N=%lu)\n", num_images);
+    printf("[BENCH] Start Loop (N=%lu images x %d loops = %lu inferences)\n", 
+           num_images, BENCHMARK_LOOPS, total_inferences);
     
-    for (uint32_t i = 0; i < num_images; i++) {
-        ImageQueueEntry *img = queue_peek(i);
-        if (img == NULL) break;
-        
-        load_image_to_cnn(img);
-        cnn_time = 0;
-        
-        float confidence;
-        int predicted = run_cnn_inference(&confidence);
-        uint32_t latency = cnn_time;
-        
-        results[i].latency_us = latency;
-        results[i].predicted_class = predicted;
-        results[i].true_label = img->label;
-        results[i].correct = (predicted == img->label);
-        results[i].confidence = confidence;
-        
-        total_time_us += latency;
-        total_confidence += confidence;
-        if (latency < min_time) min_time = latency;
-        if (latency > max_time) max_time = latency;
-        if (results[i].correct) correct_count++;
-        
-        printf("Iter %02lu: %.1fms | Class: %d | GT: %d | Conf: %.1f%% | %s\n",
-               i + 1, (double)latency / 1000.0, predicted, img->label,
-               (double)confidence, results[i].correct ? "OK" : "FAIL");
+    for (int loop = 0; loop < BENCHMARK_LOOPS; loop++) {
+        for (uint32_t i = 0; i < num_images; i++) {
+            ImageQueueEntry *img = queue_peek(i);
+            if (img == NULL) break;
+            
+            load_image_to_cnn(img);
+            cnn_time = 0;
+            
+            float confidence;
+            int predicted = run_cnn_inference(&confidence);
+            uint32_t latency = cnn_time;
+            
+            uint32_t idx = loop * num_images + i;
+            results[idx % MAX_QUEUE_SIZE].latency_us = latency;
+            results[idx % MAX_QUEUE_SIZE].predicted_class = predicted;
+            results[idx % MAX_QUEUE_SIZE].true_label = img->label;
+            results[idx % MAX_QUEUE_SIZE].correct = (predicted == img->label);
+            results[idx % MAX_QUEUE_SIZE].confidence = confidence;
+            
+            total_time_us += latency;
+            total_confidence += confidence;
+            if (latency < min_time) min_time = latency;
+            if (latency > max_time) max_time = latency;
+            if (predicted == img->label) correct_count++;
+            
+            printf("Loop %02d Img %02lu: %.1fms | Class: %d | GT: %d | Conf: %.1f%% | %s\n",
+                   loop + 1, i + 1, (double)latency / 1000.0, predicted, img->label,
+                   (double)confidence, (predicted == img->label) ? "OK" : "FAIL");
+        }
     }
     
     printf("[BENCH] Loop End.\n");
     
     // Statistics
-    float avg_time = (float)total_time_us / (float)num_images;
+    float avg_time = (float)total_time_us / (float)total_inferences;
     float fps = 1000000.0f / avg_time;
-    float accuracy = ((float)correct_count / (float)num_images) * 100.0f;
-    float avg_confidence = total_confidence / (float)num_images;
+    float accuracy = ((float)correct_count / (float)total_inferences) * 100.0f;
+    float avg_confidence = total_confidence / (float)total_inferences;
     
     // AlexNet-Small constants (from cnn.h)
     const uint32_t total_ops = 27039360;      // Total operations per inference
@@ -415,8 +421,8 @@ static void run_benchmark(uint32_t num_images) {
     printf("============================================================\n");
     
     printf("[BASIC STATISTICS]\n");
-    printf("  Total Images:        %lu\n", num_images);
-    printf("  Correct:             %lu/%lu (%.1f%%)\n", correct_count, num_images, (double)accuracy);
+    printf("  Total Images:        %lu (queued) x %d loops = %lu inferences\n", num_images, BENCHMARK_LOOPS, total_inferences);
+    printf("  Correct:             %lu/%lu (%.1f%%)\n", correct_count, total_inferences, (double)accuracy);
     printf("  Avg Confidence:      %.1f%%\n", (double)avg_confidence);
     printf("------------------------------------------------------------\n");
     
@@ -427,6 +433,8 @@ static void run_benchmark(uint32_t num_images) {
     printf("  Max Latency:         %lu us\n", max_time);
     printf("  Latency Jitter:      %lu us\n", max_time - min_time);
     printf("  --- Measured Overhead ---\n");
+    printf("  Load Weights:        %lu us\n", measured_load_weights_time_us);
+    printf("  Load Bias:           %lu us\n", measured_load_bias_time_us);
     printf("  Load Input:          %lu us\n", measured_load_input_time_us);
     printf("  CNN Init:            %lu us\n", measured_init_time_us);
     printf("  CNN Configure:       %lu us\n", measured_configure_time_us);
@@ -437,7 +445,7 @@ static void run_benchmark(uint32_t num_images) {
     
     printf("[THROUGHPUT METRICS]\n");
     printf("  Throughput:          %.2f FPS\n", (double)fps);
-    printf("  Total Time:          %.2f ms (%lu images)\n", (double)total_time_us / 1000.0, num_images);
+    printf("  Total Time:          %.2f ms (%lu inferences)\n", (double)total_time_us / 1000.0, total_inferences);
     printf("------------------------------------------------------------\n");
     
     printf("[TOPS ANALYSIS]\n");
@@ -468,7 +476,7 @@ static void run_benchmark(uint32_t num_images) {
     } else {
         printf("  NPU Efficiency:      LOW (<20%%)\n");
     }
-    printf("  Accuracy:            %s\n", (correct_count == num_images) ? "PERFECT" : "PARTIAL");
+    printf("  Accuracy:            %s\n", (correct_count == total_inferences) ? "PERFECT" : "PARTIAL");
     printf("============================================================\n");
 }
 

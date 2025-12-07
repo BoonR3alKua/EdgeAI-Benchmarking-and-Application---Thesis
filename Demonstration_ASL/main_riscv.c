@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
 #include "mxc.h"
 #include "mxc_device.h"
 #include "mxc_delay.h"
@@ -52,7 +53,7 @@
 #define NUM_CLASSES         CNN_NUM_OUTPUTS
 #define INFERENCE_THRESHOLD 50
 #define MAX_INFERENCES      20
-#define CAPTURE_TIMEOUT     100000  /* Loop iterations */
+#define CAPTURE_TIMEOUT     1000000  /* Loop iterations - increased */
 
 /* **** Simplified State Machine **** */
 typedef enum {
@@ -92,7 +93,7 @@ static int init_system(void);
 static int run_single_inference(void);
 static void print_summary(void);
 static void load_image_to_cnn(void);
-static int get_prediction(int16_t *out_class, int *out_prob);
+static void get_top3_predictions(int *idx, int *prob);
 
 /*******************************************************************************
  * STATE: INIT - One-time system initialization
@@ -110,33 +111,39 @@ static int init_system(void)
 
     /* Print banner */
     printf("\n========================================================\n");
-    printf("   ASL Recognition - RISC-V Core (MAX78000)\n");
+    printf("     ASL Recognition Demo - RISC-V Core (MAX78000)\n");
     printf("========================================================\n");
-    printf("  Image: %dx%d | Classes: %d | Threshold: %d%%\n", 
-           IMAGE_SIZE_X, IMAGE_SIZE_Y, NUM_CLASSES, INFERENCE_THRESHOLD);
+    printf("System Configuration:\n");
+    printf("  Core:           RISC-V\n");
+    printf("  Image Size:     %dx%d (RGB)\n", IMAGE_SIZE_X, IMAGE_SIZE_Y);
+    printf("  Input Format:   CHW (3x%dx%d)\n", IMAGE_SIZE_X, IMAGE_SIZE_Y);
+    printf("  Num Classes:    %d (A-Z + Unknown)\n", NUM_CLASSES);
+    printf("  CNN Clock:      50 MHz (APB div 1)\n");
+    printf("  Confidence:     %d%% threshold\n", INFERENCE_THRESHOLD);
     printf("========================================================\n\n");
 
-    /* --- CNN Initialization (RISC-V responsibility) --- */
-    printf("[RISC-V] Initializing CNN...\n");
+    /* --- CNN Initialization --- */
+    printf("Initializing CNN accelerator...\n");
     cnn_enable(MXC_S_GCR_PCLKDIV_CNNCLKSEL_PCLK, MXC_S_GCR_PCLKDIV_CNNCLKDIV_DIV1);
     cnn_boost_enable(MXC_GPIO2, MXC_GPIO_PIN_5);
     cnn_init();
     cnn_load_weights();
     cnn_load_bias();
-    printf("  CNN ready (19.89M ops, 336KB weights)\n");
+    printf("  Weights loaded: 336,688 bytes (76.1%% of capacity)\n");
+    printf("  Bias loaded:    811 bytes (39.6%% of capacity)\n");
+    printf("  Total ops:      19,893,632 (19.58M MACC)\n\n");
 
-    /* --- DMA Initialization (RISC-V responsibility) --- */
-    printf("[RISC-V] Initializing DMA...\n");
+    /* --- DMA Initialization --- */
+    printf("Initializing camera...\n");
     MXC_DMA_Init();
     dma_channel = MXC_DMA_AcquireChannel();
     if (dma_channel < 0) {
         printf("  ERROR: DMA channel acquisition failed!\n");
         return -1;
     }
-    printf("  DMA channel %d acquired\n", dma_channel);
+    printf("  DMA channel:    %d\n", dma_channel);
 
-    /* --- Camera Initialization (RISC-V responsibility) --- */
-    printf("[RISC-V] Initializing camera...\n");
+    /* --- Camera Initialization --- */
     camera_init(CAMERA_FREQ);
     camera_set_hmirror(0);
     camera_set_vflip(0);
@@ -148,9 +155,13 @@ static int init_system(void)
         printf("  ERROR: Camera setup failed (%d)!\n", ret);
         return -1;
     }
-    printf("  Camera ready (%dx%d BAYER)\n", CAMERA_SIZE_X, CAMERA_SIZE_Y);
+    printf("  Resolution:     %dx%d (capture) -> %dx%d (CNN)\n", 
+           CAMERA_SIZE_X, CAMERA_SIZE_Y, IMAGE_SIZE_X, IMAGE_SIZE_Y);
+    printf("  Pixel format:   BAYER\n\n");
 
-    printf("\n*** READY ***\n\n");
+    printf("========================================================\n");
+    printf("*** READY - Running %d inferences ***\n", MAX_INFERENCES);
+    printf("========================================================\n\n");
     return 0;
 }
 
@@ -160,13 +171,12 @@ static int init_system(void)
  ******************************************************************************/
 static int run_single_inference(void)
 {
-    uint32_t t_capture, t_load, t_infer, t_post, t_total;
+    uint32_t t_capture, t_load, t_infer, t_unload, t_softmax, t_total;
     uint32_t timeout;
-    int16_t pred_class;
-    int pred_prob;
+    int top3_idx[3], top3_prob[3];
     
     inference_count++;
-    printf("=== Inference #%d/%d ===\n", inference_count, MAX_INFERENCES);
+    printf("=========== Inference #%d ===========\n", inference_count);
 
     /* --- Prepare CNN --- */
     cnn_init();
@@ -176,6 +186,7 @@ static int run_single_inference(void)
 
     /* --- Capture Image --- */
     LED_On(LED1);
+    MXC_Delay(MXC_DELAY_MSEC(10));
     MXC_TMR_SW_Start(MXC_TMR1);
     camera_start_capture_image();
     
@@ -185,6 +196,7 @@ static int run_single_inference(void)
     
     if (timeout == 0) {
         printf("ERROR: Capture timeout\n");
+        printf("=====================================\n\n");
         LED_Off(LED1);
         return -1;
     }
@@ -202,35 +214,56 @@ static int run_single_inference(void)
     t_infer = cnn_time;
     LED_Off(LED1);
 
-    /* --- Post-process Results --- */
+    /* --- Unload Results --- */
     MXC_TMR_SW_Start(MXC_TMR1);
     cnn_unload((uint32_t *)ml_data);
-    softmax_q17p14_q15((const q31_t *)ml_data, NUM_CLASSES, ml_softmax);
-    int valid = get_prediction(&pred_class, &pred_prob);
-    t_post = MXC_TMR_SW_Stop(MXC_TMR1);
+    t_unload = MXC_TMR_SW_Stop(MXC_TMR1);
 
-    /* --- Output Result --- */
-    t_total = t_capture + t_load + t_infer + t_post;
-    printf("Time: %u us (cap:%u load:%u cnn:%u post:%u)\n",
-           t_total, t_capture, t_load, t_infer, t_post);
-    
-    if (valid && pred_class < NUM_CLASSES - 1) {
-        printf(">>> '%s' (%d%%)\n", labels[pred_class], pred_prob);
+    /* --- Softmax --- */
+    MXC_TMR_SW_Start(MXC_TMR1);
+    softmax_q17p14_q15((const q31_t *)ml_data, NUM_CLASSES, ml_softmax);
+    get_top3_predictions(top3_idx, top3_prob);
+    t_softmax = MXC_TMR_SW_Stop(MXC_TMR1);
+
+    /* --- Calculate Total Time --- */
+    t_total = t_capture + t_load + t_infer + t_unload + t_softmax;
+
+    /* --- Print Timing Breakdown --- */
+    printf("Timing Breakdown:\n");
+    printf("  Capture:        %lu us\n", t_capture);
+    printf("  Preprocess/Load:%lu us\n", t_load);
+    printf("  CNN Inference:  %lu us\n", t_infer);
+    printf("  Unload:         %lu us\n", t_unload);
+    printf("  Softmax:        %lu us\n", t_softmax);
+    printf("  Total:          %lu us (%.2f ms)\n\n", t_total, (double)t_total / 1000.0);
+
+    /* --- Print Top-3 Predictions --- */
+    printf("Top-3 Predictions:\n");
+    printf("  1. '%s': %d%% [raw: %ld]\n", labels[top3_idx[0]], top3_prob[0], ml_data[top3_idx[0]]);
+    printf("  2. '%s': %d%% [raw: %ld]\n", labels[top3_idx[1]], top3_prob[1], ml_data[top3_idx[1]]);
+    printf("  3. '%s': %d%% [raw: %ld]\n\n", labels[top3_idx[2]], top3_prob[2], ml_data[top3_idx[2]]);
+
+    /* --- Print Result --- */
+    if (top3_prob[0] >= INFERENCE_THRESHOLD && top3_idx[0] < NUM_CLASSES - 1) {
+        printf(">>> RESULT: '%s' (%d%%)\n", labels[top3_idx[0]], top3_prob[0]);
         recognized_count++;
         LED_On(LED2);
         MXC_Delay(MXC_DELAY_MSEC(100));
         LED_Off(LED2);
     } else {
-        printf(">>> Unknown/Low confidence\n");
+        printf(">>> RESULT: Low confidence (below %d%%)\n", INFERENCE_THRESHOLD);
     }
 
-    /* Update statistics */
+    /* --- Update Statistics --- */
     total_time_sum += t_total;
     if (t_total < min_time) min_time = t_total;
     if (t_total > max_time) max_time = t_total;
 
-    printf("Stats: %d/%d recognized | avg:%u us\n\n",
-           recognized_count, inference_count, total_time_sum / inference_count);
+    printf("\nSession Stats: %d recognized, %d unknown\n", 
+           recognized_count, inference_count - recognized_count);
+    printf("Timing: min=%lu us, max=%lu us, avg=%lu us\n",
+           min_time, max_time, total_time_sum / inference_count);
+    printf("=====================================\n\n");
     
     return 0;
 }
@@ -240,14 +273,20 @@ static int run_single_inference(void)
  ******************************************************************************/
 static void print_summary(void)
 {
-    printf("\n============ SESSION COMPLETE ============\n");
-    printf("Total: %d inferences\n", inference_count);
-    printf("Recognized: %d (%d%%)\n", recognized_count,
+    uint16_t unknown_count = inference_count - recognized_count;
+    uint32_t avg_time = inference_count > 0 ? total_time_sum / inference_count : 0;
+    
+    printf("\n============ SESSION SUMMARY ============\n");
+    printf("Total Inferences: %d\n", inference_count);
+    printf("  Recognized: %d (%d%%)\n", recognized_count,
            inference_count > 0 ? (100 * recognized_count) / inference_count : 0);
-    printf("Timing: min=%u max=%u avg=%u us\n",
-           min_time, max_time, 
-           inference_count > 0 ? total_time_sum / inference_count : 0);
-    printf("==========================================\n");
+    printf("  Unknown:    %d (%d%%)\n", unknown_count,
+           inference_count > 0 ? (100 * unknown_count) / inference_count : 0);
+    printf("Timing Statistics:\n");
+    printf("  Min: %lu us (%.2f ms)\n", min_time, (double)min_time / 1000.0);
+    printf("  Max: %lu us (%.2f ms)\n", max_time, (double)max_time / 1000.0);
+    printf("  Avg: %lu us (%.2f ms)\n", avg_time, (double)avg_time / 1000.0);
+    printf("=========================================\n");
     
     /* Cleanup */
     cnn_disable();
@@ -367,26 +406,33 @@ static void load_image_to_cnn(void)
 }
 
 /*******************************************************************************
- * Helper: Get prediction from CNN output
+ * Helper: Get top-3 predictions from CNN output
  ******************************************************************************/
-static int get_prediction(int16_t *out_class, int *out_prob)
+static void get_top3_predictions(int *idx, int *prob)
 {
-    int32_t max_val = 1 << 31;
-    q15_t max_soft = 0;
-    int16_t max_idx = -1;
-
+    /* Initialize top-3 with invalid values */
+    int32_t top3_val[3] = {INT32_MIN, INT32_MIN, INT32_MIN};
+    idx[0] = idx[1] = idx[2] = 0;
+    
+    /* Find top-3 by raw CNN output values */
     for (int i = 0; i < NUM_CLASSES; i++) {
-        if (ml_data[i] > max_val) {
-            max_val = ml_data[i];
-            max_soft = ml_softmax[i];
-            max_idx = i;
+        if (ml_data[i] > top3_val[0]) {
+            /* Shift down */
+            top3_val[2] = top3_val[1]; idx[2] = idx[1];
+            top3_val[1] = top3_val[0]; idx[1] = idx[0];
+            top3_val[0] = ml_data[i];  idx[0] = i;
+        } else if (ml_data[i] > top3_val[1]) {
+            top3_val[2] = top3_val[1]; idx[2] = idx[1];
+            top3_val[1] = ml_data[i];  idx[1] = i;
+        } else if (ml_data[i] > top3_val[2]) {
+            top3_val[2] = ml_data[i];  idx[2] = i;
         }
     }
-
-    *out_class = max_idx;
-    *out_prob = (100 * max_soft) / 32768;
-
-    return (*out_prob >= INFERENCE_THRESHOLD) ? 1 : 0;
+    
+    /* Convert softmax to percentage */
+    prob[0] = (100 * ml_softmax[idx[0]]) / 32768;
+    prob[1] = (100 * ml_softmax[idx[1]]) / 32768;
+    prob[2] = (100 * ml_softmax[idx[2]]) / 32768;
 }
 
 /*
