@@ -92,7 +92,8 @@ static uint16_t recognized_count = 0;
 static int dma_channel = -1;
 
 /* Preprocessed image buffers (CHW format as uint32_t for FIFO) */
-static uint32_t ch_r[1024];  /* 64x64 / 4 bytes = 1024 words */
+/* Max size for 64x64: 64*64 = 4096 bytes / 4 = 1024 words */
+static uint32_t ch_r[1024];
 static uint32_t ch_g[1024];
 static uint32_t ch_b[1024];
 
@@ -376,14 +377,20 @@ int main(void)
  ******************************************************************************/
 static void preprocess_camera_image(void)
 {
-    /* Temporary byte buffers for preprocessing - NOT STATIC! */
-    int8_t temp_r[IMAGE_SIZE_X * IMAGE_SIZE_Y];
-    int8_t temp_g[IMAGE_SIZE_X * IMAGE_SIZE_Y]; 
-    int8_t temp_b[IMAGE_SIZE_X * IMAGE_SIZE_Y];
+    /* Temporary byte buffers for preprocessing - fixed max size to avoid overflow */
+    int8_t temp_r[64 * 64];  /* Max size: 4096 bytes */
+    int8_t temp_g[64 * 64]; 
+    int8_t temp_b[64 * 64];
     
-    /* Center crop offsets */
+    /* Center crop offsets - ensure even alignment for BAYER */
     uint32_t start_x = ((CAMERA_SIZE_X - IMAGE_SIZE_X) / 2) & ~1;
     uint32_t start_y = ((CAMERA_SIZE_Y - IMAGE_SIZE_Y) / 2) & ~1;
+    
+    /* Safety bounds check */
+    if (start_x + IMAGE_SIZE_X >= CAMERA_SIZE_X || start_y + IMAGE_SIZE_Y >= CAMERA_SIZE_Y) {
+        printf("ERROR: Image size too large for camera resolution\n");
+        return;
+    }
     
     int pixel_idx = 0;
     
@@ -449,8 +456,15 @@ static void load_input_fifo(void)
     printf("  Loading FIFO: first R,G,B words = 0x%08lx, 0x%08lx, 0x%08lx\n", 
            in0[0], in1[0], in2[0]);
 
-    /* Stream 1024 32-bit words per channel (64x64 = 4096 bytes / 4 = 1024 words) */
-    for (i = 0; i < 1024; i++) {
+    /* Calculate word count dynamically based on IMAGE_SIZE */
+    /* 64x64 = 4096 bytes / 4 = 1024 words */
+    /* 32x32 = 1024 bytes / 4 = 256 words */
+    uint32_t word_count = (IMAGE_SIZE_X * IMAGE_SIZE_Y) / 4;
+    
+    printf("  Streaming %lu words per channel (image: %dx%d)\n", 
+           word_count, IMAGE_SIZE_X, IMAGE_SIZE_Y);
+    
+    for (i = 0; i < word_count; i++) {
         /* Wait for FIFO 0 (R channel) to have space */
         while ((*FIFO_STATUS_REG & FIFO_0_FULL) != 0);
         *FIFO_0_WRITE = *in0++;

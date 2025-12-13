@@ -364,16 +364,24 @@ static void load_image_to_cnn(void)
     /*
      * BAYER demosaicing: Convert raw BAYER to RGB and load to CNN
      * CNN expects CHW format at specific memory addresses
+     * 
+     * NOTE: Use BSS section (not stack) to avoid stack overflow with 64x64
      */
     uint8_t *raw = frame_buffer;
     
-    static int8_t ch_r[IMAGE_SIZE_X * IMAGE_SIZE_Y];
-    static int8_t ch_g[IMAGE_SIZE_X * IMAGE_SIZE_Y];
-    static int8_t ch_b[IMAGE_SIZE_X * IMAGE_SIZE_Y];
+    static int8_t ch_r[64 * 64];  /* Max size to avoid overflow */
+    static int8_t ch_g[64 * 64];
+    static int8_t ch_b[64 * 64];
     
-    /* Center crop offsets */
+    /* Center crop offsets - ensure we don't access beyond boundaries */
     uint32_t start_x = ((w - IMAGE_SIZE_X) / 2) & ~1;
     uint32_t start_y = ((h - IMAGE_SIZE_Y) / 2) & ~1;
+    
+    /* Safety bounds check for BAYER demosaicing (+1 access) */
+    if (start_x + IMAGE_SIZE_X >= w - 1 || start_y + IMAGE_SIZE_Y >= h - 1) {
+        printf("ERROR: Image size too large for demosaicing bounds\n");
+        return;
+    }
     
     int idx = 0;
     uint8_t r, g, b;
@@ -414,9 +422,11 @@ static void load_image_to_cnn(void)
     }
 
     /* Load to CNN: R->0x50400000, G->0x50800000, B->0x50C00000 */
-    memcpy32((uint32_t *)0x50400000, (uint32_t *)ch_r, 1024);
-    memcpy32((uint32_t *)0x50800000, (uint32_t *)ch_g, 1024);
-    memcpy32((uint32_t *)0x50C00000, (uint32_t *)ch_b, 1024);
+    /* memcpy32 third parameter is WORD count (bytes/4) */
+    uint32_t word_count = (IMAGE_SIZE_X * IMAGE_SIZE_Y) / 4;
+    memcpy32((uint32_t *)0x50400000, (uint32_t *)ch_r, word_count);
+    memcpy32((uint32_t *)0x50800000, (uint32_t *)ch_g, word_count);
+    memcpy32((uint32_t *)0x50C00000, (uint32_t *)ch_b, word_count);
 }
 
 /*******************************************************************************
