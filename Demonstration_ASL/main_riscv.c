@@ -144,10 +144,24 @@ static int init_system(void)
     printf("  DMA channel:    %d\n", dma_channel);
 
     /* --- Camera Initialization --- */
+    printf("Initializing camera...\n");
+    
+    /* Initialize camera - following CameraIF example pattern */
     camera_init(CAMERA_FREQ);
-    camera_set_hmirror(0);
-    camera_set_vflip(0);
-    MXC_Delay(MXC_DELAY_MSEC(100));
+    
+    /* Verify camera is responding */
+    int slave_addr = camera_get_slave_address();
+    printf("  Camera I2C slave address: %02x\n", slave_addr);
+    
+    int camera_id;
+    ret = camera_get_product_id(&camera_id);
+    if (ret != STATUS_OK) {
+        printf("  ERROR: Failed to read camera ID (%d)\n", ret);
+        return -1;
+    }
+    printf("  Camera ID detected: %04x\n", camera_id);
+    
+    /* Note: OV7692 doesn't need hmirror/vflip in init sequence per CameraIF example */
     
     ret = camera_setup(CAMERA_SIZE_X, CAMERA_SIZE_Y, PIXFORMAT_BAYER,
                        FIFO_FOUR_BYTE, USE_DMA, dma_channel);

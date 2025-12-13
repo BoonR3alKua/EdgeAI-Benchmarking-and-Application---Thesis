@@ -84,6 +84,9 @@ int main(void)
 
   // Enable DMA clock (required for RISC-V to use DMA for camera)
   MXC_SYS_ClockEnable(MXC_SYS_PERIPH_CLOCK_DMA);
+  
+  // Enable PCIF (Parallel Camera Interface) clock
+  MXC_SYS_ClockEnable(MXC_SYS_PERIPH_CLOCK_PCIF);
 
   printf("\n*** ARM Core: ASL Recognition Demo ***\n");
   printf("Camera power enabled, starting RISC-V core...\n");

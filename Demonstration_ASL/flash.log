@@ -11,6 +11,10 @@ Info : SWD DPIDR 0x2ba01477
 Info : [max32xxx.cpu] Cortex-M4 r0p1 processor detected
 Info : [max32xxx.cpu] target has 6 breakpoints, 4 watchpoints
 Info : starting gdb server for max32xxx.cpu on pipe
+Error: [max32xxx.cpu] clearing lockup after double fault
+Polling target max32xxx.cpu failed, trying to reexamine
+Info : [max32xxx.cpu] Cortex-M4 r0p1 processor detected
+Info : [max32xxx.cpu] target has 6 breakpoints, 4 watchpoints
 Info : SWD DPIDR 0x2ba01477
 [max32xxx.cpu] halted due to debug-request, current mode: Thread 
 xPSR: 0x81000000 pc: 0x00002124 msp: 0x20003ff0
