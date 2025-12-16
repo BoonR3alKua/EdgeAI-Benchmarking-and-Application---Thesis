@@ -1,0 +1,549 @@
+
+*** ARM Core: ASL FIFO Demo ***
+Camera power enabled, starting RISC-V core...
+RISC-V core started. ARM entering sleep mode...
+
+
+========================================================
+     ASL Recognition Demo - FIFO Streaming Mode
+========================================================
+System Configuration:
+  Core:           RISC-V
+  Image Size:     64x64 (RGB)
+  Input Format:   CHW via FIFO streaming
+  Num Classes:    27 (A-Z + Unknown)
+  CNN Model:      AlexNet-Small (27.04M ops)
+  CNN Clock:      50 MHz (APB div 1)
+  Confidence:     50% threshold
+========================================================
+
+Initializing CNN accelerator...
+  Weights loaded: 182,496 bytes (41.3% of capacity)
+  Bias loaded:    700 bytes (34.2% of capacity)
+  Total ops:      27,041,536 (26.89M MACC)
+
+Initializing camera...
+  DMA channel:    0
+  Camera I2C slave address: 3c
+  Camera ID detected: 7692
+  Resolution:     168x120 (capture) -> 64x64 (CNN)
+  Mode:           FIFO STREAMING_DMA
+  Pixel format:   BAYER
+
+  Resolution:     168x120 (capture) -> 64x64 (CNN)
+  Pixel format:   BAYER
+
+========================================================
+*** READY - Running 20 inferences with FIFO streaming ***
+========================================================
+
+=========== Inference #1 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 60 60 60 60
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         81561 us
+  Preprocess:      13286 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         56 us
+  Total:           108411 us ( ms)
+
+Top-3 Predictions:
+  1. 'F': 99% [raw: 561440]
+  2. 'E': 0% [raw: 245008]
+  3. 'Unknown': 0% [raw: 235952]
+
+>>> RESULT: 'F' (99%)
+
+Session Stats: 1 recognized, 0 unknown
+Timing: min=108411 us, max=108411 us, avg=108411 us
+=====================================
+
+=========== Inference #2 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 20 20 9f 9f
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         54538 us
+  Preprocess:      13283 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         56 us
+  Total:           81385 us ( ms)
+
+Top-3 Predictions:
+  1. 'A': 32% [raw: 94888]
+  2. 'Y': 16% [raw: 81624]
+  3. 'S': 16% [raw: 76144]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 1 recognized, 1 unknown
+Timing: min=81385 us, max=108411 us, avg=94898 us
+=====================================
+
+=========== Inference #3 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: e0 e0 df df
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         69424 us
+  Preprocess:      13283 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           96270 us ( ms)
+
+Top-3 Predictions:
+  1. 'N': 97% [raw: 339704]
+  2. 'M': 1% [raw: 236888]
+  3. 'W': 0% [raw: 221232]
+
+>>> RESULT: 'N' (97%)
+
+Session Stats: 2 recognized, 1 unknown
+Timing: min=81385 us, max=108411 us, avg=95355 us
+=====================================
+
+=========== Inference #4 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 5e 5e 20 20
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         55324 us
+  Preprocess:      13278 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           82165 us ( ms)
+
+Top-3 Predictions:
+  1. 'C': 23% [raw: 86608]
+  2. 'F': 23% [raw: 80608]
+  3. 'J': 11% [raw: 70576]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 2 recognized, 2 unknown
+Timing: min=81385 us, max=108411 us, avg=92057 us
+=====================================
+
+=========== Inference #5 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: e3 e3 df df
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         69429 us
+  Preprocess:      13286 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           96278 us ( ms)
+
+Top-3 Predictions:
+  1. 'F': 96% [raw: 298936]
+  2. 'W': 3% [raw: 215896]
+  3. 'Y': 0% [raw: 109240]
+
+>>> RESULT: 'F' (96%)
+
+Session Stats: 3 recognized, 2 unknown
+Timing: min=81385 us, max=108411 us, avg=92901 us
+=====================================
+
+=========== Inference #6 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 26 26 5b 5b
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         55320 us
+  Preprocess:      13283 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           82166 us ( ms)
+
+Top-3 Predictions:
+  1. 'Y': 41% [raw: 116424]
+  2. 'J': 20% [raw: 94240]
+  3. 'I': 10% [raw: 82056]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 3 recognized, 3 unknown
+Timing: min=81385 us, max=108411 us, avg=91112 us
+=====================================
+
+=========== Inference #7 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 29 29 19 19
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         69338 us
+  Preprocess:      13282 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           96183 us ( ms)
+
+Top-3 Predictions:
+  1. 'K': 91% [raw: 212472]
+  2. 'W': 2% [raw: 130248]
+  3. 'F': 2% [raw: 128496]
+
+>>> RESULT: 'K' (91%)
+
+Session Stats: 4 recognized, 3 unknown
+Timing: min=81385 us, max=108411 us, avg=91836 us
+=====================================
+
+=========== Inference #8 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: a7 a7 da da
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         55325 us
+  Preprocess:      13286 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           82174 us ( ms)
+
+Top-3 Predictions:
+  1. 'F': 99% [raw: 323760]
+  2. 'K': 0% [raw: 159000]
+  3. 'E': 0% [raw: 111304]
+
+>>> RESULT: 'F' (99%)
+
+Session Stats: 5 recognized, 3 unknown
+Timing: min=81385 us, max=108411 us, avg=90629 us
+=====================================
+
+=========== Inference #9 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 66 66 99 99
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         55320 us
+  Preprocess:      13283 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           82166 us ( ms)
+
+Top-3 Predictions:
+  1. 'K': 65% [raw: 130232]
+  2. 'R': 8% [raw: 77536]
+  3. 'G': 4% [raw: 69384]
+
+>>> RESULT: 'K' (65%)
+
+Session Stats: 6 recognized, 3 unknown
+Timing: min=81385 us, max=108411 us, avg=89688 us
+=====================================
+
+=========== Inference #10 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: e2 e2 9c 9c
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         55402 us
+  Preprocess:      13278 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           82243 us ( ms)
+
+Top-3 Predictions:
+  1. 'F': 74% [raw: 146312]
+  2. 'K': 9% [raw: 92880]
+  3. 'C': 4% [raw: 81152]
+
+>>> RESULT: 'F' (74%)
+
+Session Stats: 7 recognized, 3 unknown
+Timing: min=81385 us, max=108411 us, avg=88944 us
+=====================================
+
+=========== Inference #11 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 20 20 5f 5f
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         55406 us
+  Preprocess:      13283 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           82252 us ( ms)
+
+Top-3 Predictions:
+  1. 'K': 38% [raw: 103496]
+  2. 'J': 19% [raw: 87824]
+  3. 'X': 9% [raw: 70664]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 7 recognized, 4 unknown
+Timing: min=81385 us, max=108411 us, avg=88335 us
+=====================================
+
+=========== Inference #12 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 5f 5f 5f 5f
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         69328 us
+  Preprocess:      13283 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           96174 us ( ms)
+
+Top-3 Predictions:
+  1. 'F': 33% [raw: 127600]
+  2. 'K': 33% [raw: 126592]
+  3. 'R': 16% [raw: 107000]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 7 recognized, 5 unknown
+Timing: min=81385 us, max=108411 us, avg=88988 us
+=====================================
+
+=========== Inference #13 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 60 60 5f 5f
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         69068 us
+  Preprocess:      13282 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           95913 us ( ms)
+
+Top-3 Predictions:
+  1. 'K': 75% [raw: 179288]
+  2. 'W': 9% [raw: 136552]
+  3. 'F': 9% [raw: 127360]
+
+>>> RESULT: 'K' (75%)
+
+Session Stats: 8 recognized, 5 unknown
+Timing: min=81385 us, max=108411 us, avg=89521 us
+=====================================
+
+=========== Inference #14 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 20 20 df df
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         55229 us
+  Preprocess:      13286 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           82078 us ( ms)
+
+Top-3 Predictions:
+  1. 'F': 63% [raw: 159096]
+  2. 'K': 15% [raw: 127560]
+  3. 'R': 7% [raw: 105152]
+
+>>> RESULT: 'F' (63%)
+
+Session Stats: 9 recognized, 5 unknown
+Timing: min=81385 us, max=108411 us, avg=88989 us
+=====================================
+
+=========== Inference #15 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 20 20 1f 1f
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         55138 us
+  Preprocess:      13283 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           81984 us ( ms)
+
+Top-3 Predictions:
+  1. 'K': 42% [raw: 142712]
+  2. 'I': 21% [raw: 127968]
+  3. 'J': 10% [raw: 110488]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 9 recognized, 6 unknown
+Timing: min=81385 us, max=108411 us, avg=88522 us
+=====================================
+
+=========== Inference #16 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: a0 a0 5e 5e
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         69070 us
+  Preprocess:      13282 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           95915 us ( ms)
+
+Top-3 Predictions:
+  1. 'F': 99% [raw: 380888]
+  2. 'S': 0% [raw: 155576]
+  3. 'K': 0% [raw: 144632]
+
+>>> RESULT: 'F' (99%)
+
+Session Stats: 10 recognized, 6 unknown
+Timing: min=81385 us, max=108411 us, avg=88984 us
+=====================================
+
+=========== Inference #17 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: dd dd 1f 1f
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         55143 us
+  Preprocess:      13287 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           81993 us ( ms)
+
+Top-3 Predictions:
+  1. 'K': 47% [raw: 171344]
+  2. 'E': 23% [raw: 152048]
+  3. 'G': 11% [raw: 142632]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 10 recognized, 7 unknown
+Timing: min=81385 us, max=108411 us, avg=88573 us
+=====================================
+
+=========== Inference #18 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 1e 1e 20 20
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         68979 us
+  Preprocess:      13286 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           95828 us ( ms)
+
+Top-3 Predictions:
+  1. 'F': 99% [raw: 433928]
+  2. 'W': 0% [raw: 172448]
+  3. 'S': 0% [raw: 165552]
+
+>>> RESULT: 'F' (99%)
+
+Session Stats: 11 recognized, 7 unknown
+Timing: min=81385 us, max=108411 us, avg=88976 us
+=====================================
+
+=========== Inference #19 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 1f 1f a0 a0
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         55138 us
+  Preprocess:      13282 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           81983 us ( ms)
+
+Top-3 Predictions:
+  1. 'J': 47% [raw: 132448]
+  2. 'H': 23% [raw: 117016]
+  3. 'G': 11% [raw: 98224]
+
+>>> RESULT: Low confidence (below 50%)
+
+Session Stats: 11 recognized, 8 unknown
+Timing: min=81385 us, max=108411 us, avg=88608 us
+=====================================
+
+=========== Inference #20 ===========
+  Image buffer: 168x120, 20160 bytes, first bytes: 60 60 de de
+  Sample pixels (R,G,B): (-21,-21,-21) (-122,-122,-122) (-95,-95,-95)
+  Loading FIFO: first R,G,B words = 0xf96539eb, 0xf96539eb, 0xf96539eb
+  Streaming 1024 words per channel (image: 64x64)
+  FIFO loading complete
+Timing Breakdown:
+  Capture:         69071 us
+  Preprocess:      13281 us
+  FIFO+Inference:  13497 us (CNN timer: 13387 us)
+  Unload:          11 us
+  Softmax:         55 us
+  Total:           95915 us ( ms)
+
+Top-3 Predictions:
+  1. 'F': 99% [raw: 363864]
+  2. 'K': 0% [raw: 149184]
+  3. 'D': 0% [raw: 114688]
+
+>>> RESULT: 'F' (99%)
+
+Session Stats: 12 recognized, 8 unknown
+Timing: min=81385 us, max=108411 us, avg=88973 us
+=====================================
+
+
+============ SESSION SUMMARY ============
+Total Inferences: 20
+  Recognized: 12 (60%)
+  Unknown:    8 (40%)
+Timing Statistics:
+  Min: 81385 us ( ms)
+  Max: 108411 us ( ms)
+  Avg: 88973 us ( ms)
+=========================================

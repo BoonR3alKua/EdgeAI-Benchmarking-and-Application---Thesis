@@ -1,0 +1,294 @@
+"""
+MAX78000FTHR Energy Measurement - Quick Reference
+==================================================
+
+MEASUREMENT SETUP OPTIONS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Option 1: USB Power Meter (Simplest)
+┌──────────┐     ┌─────────────┐     ┌──────────────┐
+│ Computer │────►│ USB Power   │────►│ MAX78000FTHR │
+│   USB    │     │   Meter     │     │              │
+└──────────┘     │  (UM25C)    │     └──────────────┘
+                 └─────────────┘
+Cost: $20-40
+Pros: Easy, no modification
+Cons: Total power only, low resolution
+
+
+Option 2: Shunt Resistor + Oscilloscope (Recommended)
+                    ┌────[0.1Ω Shunt]────┐
+                    │                     │
+USB 5V ─────────────┴─────────────────────┴───► MAX78000FTHR
+                    │                     │
+                    ▼                     ▼
+              Scope Ch1+              Scope Ch1-
+
+Cost: ~$100 (basic scope) or $300 (good scope)
+Pros: Time-resolved, accurate
+Cons: Requires setup, analysis
+
+
+Option 3: Nordic PPK2 (Best Balance)
+┌──────────────┐
+│  Nordic PPK2 │
+│              │  VOUT ───────► MAX78000FTHR VIN
+│   Power      │  GND  ───────► MAX78000FTHR GND
+│  Profiler    │
+└──────┬───────┘
+       │ USB
+       ▼
+   Computer
+(nRF Connect Software)
+
+Cost: $100
+Pros: Professional, easy software, CSV export
+Cons: Need to order from Nordic
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+GPIO TIMING MARKERS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Pin Assignment:
+  P0.2 (LED1) → Measurement window start/stop
+  P0.3 (LED2) → CNN completion marker
+  P2.5        → CNN boost enable
+
+Code Pattern:
+  1. GPIO HIGH  → Start measurement
+  2. Execute code
+  3. GPIO LOW   → Stop measurement
+  4. Calculate: Energy = Power × Time
+
+Use oscilloscope to capture:
+  - Channel 1: Voltage across shunt (power)
+  - Channel 2: GPIO marker (timing)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+POWER CALCULATION:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Given:
+  - Shunt resistance: R = 0.1 Ω
+  - Supply voltage: V_supply = 3.3 V
+  - Measured voltage drop across shunt: V_shunt
+
+Calculate:
+  Current:  I = V_shunt / R
+  Power:    P = I × V_supply
+  Energy:   E = ∫ P dt  (integrate power over time)
+
+Example:
+  V_shunt = 10 mV (measured on scope)
+  I = 0.010 V / 0.1 Ω = 0.1 A = 100 mA
+  P = 0.1 A × 3.3 V = 0.33 W = 330 mW
+  
+  If this lasts for 2 ms:
+  E = 0.33 W × 0.002 s = 0.00066 J = 0.66 mJ
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EXPECTED VALUES (from AN7417):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Inference Phase Breakdown (KWS20, ARM 100MHz, CNN 50MHz):
+┌─────────────────┬──────────┬───────────┬──────────┐
+│ Phase           │ Time (ms)│ Power (mW)│ Energy   │
+├─────────────────┼──────────┼───────────┼──────────┤
+│ Weight Load     │   11.6   │   19.8    │  0.15 mJ │
+│ Input Load      │    1.1   │   19.3    │  0.01 mJ │
+│ CNN Inference   │    2.0   │   37.5    │  0.14 mJ │ ← CNN CORE
+│ Output Unload   │    0.15  │   10.7    │  0.00 mJ │
+│ ARM Softmax     │    0.5   │    9.8    │  0.01 mJ │ ← ARM CORE
+├─────────────────┼──────────┼───────────┼──────────┤
+│ TOTAL           │   15.4   │     -     │  0.31 mJ │
+└─────────────────┴──────────┴───────────┴──────────┘
+
+Power Modes (Idle):
+  ACTIVE:     20 mW      (ARM running, CNN off)
+  SLEEP:       7 mW      (ARM waiting for interrupt)
+  LPM:       3-6 mW      (ARM deep sleep, peripherals on)
+  UPM:       0.3 mW      (Ultra low power)
+  STANDBY:   0.03 mW     (Memory retained)
+  BACKUP:    0.01 mW     (Minimal retention)
+
+Core Contributions:
+  CNN (active):        15-20 mW
+  ARM (100MHz):        20-25 mW
+  ARM (sleep):          7-8 mW
+  RISC-V (60MHz):      12-15 mW
+  RISC-V (sleep):       <1 mW
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MEASUREMENT WORKFLOW:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. BASELINE MEASUREMENTS
+   ┌─────────────────────────────┐
+   │ a) Idle (SLEEP mode)        │ → Expect: 6-8 mW
+   │ b) ARM only (no CNN)        │ → Expect: 20-25 mW
+   │ c) ARM + CNN (inference)    │ → Expect: 35-40 mW
+   └─────────────────────────────┘
+
+2. PHASE-BY-PHASE MEASUREMENTS
+   ┌─────────────────────────────┐
+   │ a) Weight loading           │ → Add GPIO markers
+   │ b) Input loading            │ → Record power vs time
+   │ c) CNN inference            │ → Calculate energy
+   │ d) Output unloading         │ → Compare to expected
+   │ e) Post-processing          │
+   └─────────────────────────────┘
+
+3. CORE ISOLATION
+   ┌─────────────────────────────┐
+   │ a) CNN only (ARM sleep)     │ → Subtract baseline
+   │ b) ARM only (CNN disabled)  │ → Isolate each core
+   │ c) RISC-V (ARM in LPM)      │ → Validate total
+   └─────────────────────────────┘
+
+4. DATA ANALYSIS
+   ┌─────────────────────────────┐
+   │ a) Export oscilloscope CSV  │
+   │ b) Run Python analysis      │ → process_power_measurements.py
+   │ c) Generate plots           │
+   │ d) Calculate energy/inf     │
+   └─────────────────────────────┘
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PRACTICAL TIPS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ Turn off UART during measurement (printing costs power!)
+✓ Disable LEDs if not used for markers
+✓ Disable CNN clock when not in use:
+    MXC_SYS_ClockDisable(MXC_SYS_PERIPH_CLOCK_CNN);
+✓ Use WFI (Wait For Interrupt) instead of busy-wait loops
+✓ Take 10+ measurements and average for accuracy
+✓ Keep supply voltage constant (use regulated supply, not USB)
+✓ Measure at room temperature (power varies with temp)
+✓ Use proper ground connections (minimize ground loops)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BATTERY LIFE ESTIMATION:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Example: KWS20 application
+  - 1 inference per second
+  - Energy per inference: 0.31 mJ
+  - Idle power (sleep): 7 mW
+  - Battery: 300 mAh @ 3.7V = 1110 mWh = 3996 J
+
+Calculation:
+  Active time: 15 ms (inference)
+  Idle time:  985 ms (sleep)
+  
+  Energy per second:
+    Active: 0.31 mJ × 1 = 0.31 mJ
+    Idle:   7 mW × 0.985 s = 6.9 mJ
+    Total:  7.21 mJ/s = 7.21 mW average
+  
+  Battery life:
+    3996 J / 7.21 mW = 554,000 seconds
+                     = 9,233 minutes
+                     = 154 hours
+                     = 6.4 days
+
+Improve battery life:
+  1. Use lower power sleep modes (UPM: 0.3 mW → 100+ days!)
+  2. Reduce inference frequency
+  3. Optimize model (smaller = faster = less energy)
+  4. Use RISC-V for simple tasks (lower power than ARM)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FILES IN THIS PACKAGE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. energy_measurement_helper.h
+   → C header for GPIO markers and timing
+   → Include in your main.c
+
+2. process_power_measurements.py
+   → Python script for data analysis
+   → Processes CSV from oscilloscope/PPK2
+   → Generates plots and reports
+
+3. ENERGY_MEASUREMENT_GUIDE.md
+   → Comprehensive guide (this file)
+   → Hardware setup instructions
+   → Measurement procedures
+   → Expected results
+
+4. QUICK_REFERENCE.txt
+   → This quick reference
+   → Print and keep near bench
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TROUBLESHOOTING:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Problem: Power too high
+  → Check if UART is printing (disable for measurement)
+  → Check if CNN clock is always enabled
+  → Check if peripherals (I2C, SPI, etc.) are enabled
+  → Check if using busy-wait instead of WFI
+
+Problem: Can't see CNN vs ARM power
+  → Use GPIO markers + timing correlation
+  → Put ARM in sleep during CNN inference
+  → Subtract baseline idle power
+
+Problem: Noisy measurements
+  → Use twisted pair for oscilloscope leads
+  → Add oscilloscope averaging (16x-64x)
+  → Check ground connections
+  → Shield measurement leads
+
+Problem: Results don't match expected
+  → Verify clock configuration (100MHz vs 60MHz)
+  → Check supply voltage (should be 3.3V)
+  → Verify shunt resistor value
+  → Check if CNN boost is enabled
+  → Ensure proper timing (don't include UART delays)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CONTACT & RESOURCES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Analog Devices Resources:
+  - MAX78000 Product Page:
+    https://www.analog.com/en/products/max78000.html
+  
+  - Power Optimization App Note (AN7417):
+    https://www.analog.com/en/resources/app-notes/
+    developing-power-optimized-apps-on-the-max78000.html
+  
+  - MAX78000 User Guide:
+    https://www.analog.com/media/en/technical-documentation/
+    user-guides/max78000-user-guide.pdf
+
+Community:
+  - Analog Devices EngineerZone Forum
+  - GitHub: MaximIntegratedAI/MAX78000_SDK
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+End of Quick Reference
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
