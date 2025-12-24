@@ -63,9 +63,9 @@ extern void softmax_q17p14_q15(const q31_t *vec_in, const uint16_t dim_vec, q15_
 #define CHANNEL_SIZE        4096    // 64x64 bytes per channel
 #define CHANNEL_WORDS       1024    // 4096 bytes / 4
 #define IMAGE_BYTES         12288   // 64x64x3 bytes total
-#define MAX_QUEUE_SIZE      8       // Limited by SRAM (64x64 images are larger)
+#define MAX_QUEUE_SIZE      5       // Limited by SRAM (64x64 images are larger)
+#define TOTAL_BATCHES       200     // Total number of batches for 1000 images (1000/5 = 200)
 #define WARMUP_ITERATIONS   2
-#define BENCHMARK_LOOPS     5       // Number of times to loop through queue
 #define TIMEOUT_LOOPS       100000000
 
 // ============================================================================
@@ -106,6 +106,16 @@ static uint32_t measured_softmax_time_us = 0;
 static uint32_t measured_load_input_time_us = 0;
 static uint32_t measured_load_weights_time_us = 0;
 static uint32_t measured_load_bias_time_us = 0;
+
+// Multi-batch cumulative statistics
+static uint32_t total_batches_processed = 0;
+static uint32_t total_images_processed = 0;
+static uint32_t cumulative_correct = 0;
+static uint64_t cumulative_time_us = 0;  // Use 64-bit to avoid overflow
+static uint32_t cumulative_min_time = 0xFFFFFFFF;
+static uint32_t cumulative_max_time = 0;
+static float cumulative_confidence = 0.0f;
+static uint8_t warmup_done = 0;  // Flag to track if warmup has been performed
 
 // ============================================================================
 // Queue Functions
@@ -149,8 +159,6 @@ static int wait_for_benchmark_start(uint32_t *num_images) {
     uint8_t marker_buf[4];
     uint8_t count_buf[4];
     uint32_t marker;
-    
-    printf("[INFO] Waiting for start marker (0xDEADBEEF)...\n");
     
     while (1) {
         if (uart_read_byte_timeout(&marker_buf[0], TIMEOUT_LOOPS) != 0) continue;
@@ -325,59 +333,101 @@ static void run_warmup(int iterations) {
     printf("[WARMUP] %d iterations done.\n", iterations);
 }
 
-static void run_benchmark(uint32_t num_images) {
+static void run_benchmark(uint32_t num_images, uint32_t batch_num) {
     uint32_t total_time_us = 0;
     uint32_t min_time = 0xFFFFFFFF, max_time = 0;
     uint32_t correct_count = 0;
     float total_confidence = 0.0f;
-    uint32_t total_inferences = num_images * BENCHMARK_LOOPS;
     
-    printf("[BENCH] Start Loop (N=%lu images x %d loops = %lu inferences)\n", 
-           num_images, BENCHMARK_LOOPS, total_inferences);
+    printf("[BENCH] Batch %lu/%d - Start Loop (N=%lu)\n", batch_num, TOTAL_BATCHES, num_images);
     
-    for (int loop = 0; loop < BENCHMARK_LOOPS; loop++) {
-        for (uint32_t i = 0; i < num_images; i++) {
-            ImageQueueEntry *img = queue_peek(i);
-            if (img == NULL) break;
-            
-            load_image_to_cnn(img);
-            cnn_time = 0;
-            
-            float confidence;
-            int predicted = run_cnn_inference(&confidence);
-            uint32_t latency = cnn_time;
-            
-            uint32_t idx = loop * num_images + i;
-            results[idx % MAX_QUEUE_SIZE].latency_us = latency;
-            results[idx % MAX_QUEUE_SIZE].predicted_class = predicted;
-            results[idx % MAX_QUEUE_SIZE].true_label = img->label;
-            results[idx % MAX_QUEUE_SIZE].correct = (predicted == img->label);
-            results[idx % MAX_QUEUE_SIZE].confidence = confidence;
-            
-            total_time_us += latency;
-            total_confidence += confidence;
-            if (latency < min_time) min_time = latency;
-            if (latency > max_time) max_time = latency;
-            if (predicted == img->label) correct_count++;
-            
-            printf("Loop %02d Img %02lu: %.1fms | Class: %d | GT: %d | Conf: %.1f%% | %s\n",
-                   loop + 1, i + 1, (double)latency / 1000.0, predicted, img->label,
-                   (double)confidence, (predicted == img->label) ? "OK" : "FAIL");
-        }
+    for (uint32_t i = 0; i < num_images; i++) {
+        ImageQueueEntry *img = queue_peek(i);
+        if (img == NULL) break;
+        
+        load_image_to_cnn(img);
+        cnn_time = 0;
+        
+        float confidence;
+        int predicted = run_cnn_inference(&confidence);
+        uint32_t latency = cnn_time;
+        
+        results[i].latency_us = latency;
+        results[i].predicted_class = predicted;
+        results[i].true_label = img->label;
+        results[i].correct = (predicted == img->label);
+        results[i].confidence = confidence;
+        
+        total_time_us += latency;
+        total_confidence += confidence;
+        if (latency < min_time) min_time = latency;
+        if (latency > max_time) max_time = latency;
+        if (predicted == img->label) correct_count++;
+        
+        // Global image number (1-1000) for progress tracking
+        uint32_t global_img_num = (batch_num - 1) * MAX_QUEUE_SIZE + (i + 1);
+        
+        printf("Batch %3lu Img %4lu/%4d: %.1fms | Class: %d | GT: %d | Conf: %.1f%% | %s\n",
+               batch_num, global_img_num, (int)(TOTAL_BATCHES * MAX_QUEUE_SIZE), 
+               (double)latency / 1000.0, predicted, img->label,
+               (double)confidence, (predicted == img->label) ? "OK" : "FAIL");
     }
     
-    printf("[BENCH] Loop End.\n");
+    printf("[BENCH] Batch %lu/%d - Loop End.\n", batch_num, TOTAL_BATCHES);
     
-    // Statistics
-    float avg_time = (float)total_time_us / (float)total_inferences;
+    // Update cumulative statistics
+    total_batches_processed++;
+    total_images_processed += num_images;
+    cumulative_correct += correct_count;
+    cumulative_time_us += total_time_us;
+    cumulative_confidence += total_confidence;
+    if (min_time < cumulative_min_time) cumulative_min_time = min_time;
+    if (max_time > cumulative_max_time) cumulative_max_time = max_time;
+    
+    // Print batch summary
+    float batch_accuracy = ((float)correct_count / (float)num_images) * 100.0f;
+    float batch_avg_time = (float)total_time_us / (float)num_images;
+    
+    printf("\n[BATCH %lu SUMMARY]\n", batch_num);
+    printf("  Images:     %lu\n", num_images);
+    printf("  Correct:    %lu/%lu (%.1f%%)\n", correct_count, num_images, (double)batch_accuracy);
+    printf("  Avg Time:   %.2f us (%.3f ms)\n", (double)batch_avg_time, (double)batch_avg_time / 1000.0);
+    printf("  Min/Max:    %lu / %lu us\n", min_time, max_time);
+    printf("------------------------------------------------------------\n");
+    
+    // Print cumulative progress
+    float cumulative_accuracy = ((float)cumulative_correct / (float)total_images_processed) * 100.0f;
+    printf("[CUMULATIVE PROGRESS]\n");
+    printf("  Batches:    %lu/%d\n", total_batches_processed, TOTAL_BATCHES);
+    printf("  Images:     %lu/1000\n", total_images_processed);
+    printf("  Accuracy:   %lu/%lu (%.1f%%)\n", cumulative_correct, total_images_processed, (double)cumulative_accuracy);
+    printf("  Avg Time:   %.2f us\n", (double)((float)cumulative_time_us / (float)total_images_processed));
+    printf("============================================================\n");
+    
+    printf("[BATCH %lu/200 COMPLETE]\n", batch_num);
+}
+
+/**
+ * Print final consolidated statistics after all batches complete
+ */
+static void print_final_statistics(void)
+{
+    printf("\n\n");
+    printf("############################################################\n");
+    printf("##                                                        ##\n");
+    printf("##      FINAL BENCHMARK REPORT - 1000 Images             ##\n");
+    printf("##          ASL ResNetV2-18 (64x64)                       ##\n");
+    printf("##                                                        ##\n");
+    printf("############################################################\n");
+    printf("\n");
+    
+    // Calculate aggregate statistics
+    float avg_time = (float)cumulative_time_us / (float)total_images_processed;
     float fps = 1000000.0f / avg_time;
-    float accuracy = ((float)correct_count / (float)total_inferences) * 100.0f;
-    float avg_confidence = total_confidence / (float)total_inferences;
+    float accuracy = ((float)cumulative_correct / (float)total_images_processed) * 100.0f;
+    float avg_confidence = cumulative_confidence / (float)total_images_processed;
     
-    // ASL-ResNetV2-18 constants (from cnn.h)
-    // Hardware: 19,893,632 ops (19,582,336 macc; 247,808 comp; 63,488 add; 0 mul; 0 bitwise)
-    // Weight memory: 336,688 bytes out of 442,368 bytes total (76.1%)
-    // Bias memory:   811 bytes out of 2,048 bytes total (39.6%)
+    // ASL-ResNetV2-18 constants
     const uint32_t total_ops = 19893632;
     const uint32_t total_macs = 19582336;
     const uint32_t weight_bytes = 336688;
@@ -385,20 +435,19 @@ static void run_benchmark(uint32_t num_images) {
     const uint32_t input_bytes = IMAGE_BYTES;
     const uint32_t output_bytes = CNN_NUM_OUTPUTS * 4;
     
-    // MAX78000 NPU specs
-    // 64 parallel processors @ 50MHz, 9 MACs/cycle = 18 ops/cycle (1 MAC = 2 ops)
+    // NPU specs
     const float npu_freq_mhz = 50.0f;
     const uint32_t num_processors = 64;
     const uint32_t ops_per_cycle = 18;
     const float peak_tops = (npu_freq_mhz * 1e6f * num_processors * ops_per_cycle) / 1e12f;
     
-    // Measured overhead times
+    // Latency calculations
+    float core_latency_us = avg_time;
     uint32_t total_overhead_us = measured_load_input_time_us + measured_init_time_us + 
                                   measured_configure_time_us + measured_unload_time_us + 
                                   measured_softmax_time_us;
-    
-    float core_latency_us = avg_time;
     float system_latency_us = core_latency_us + (float)total_overhead_us;
+    
     float effective_tops = (float)total_ops / (core_latency_us / 1e6f) / 1e12f;
     float effective_macs_tops = (float)total_macs / (core_latency_us / 1e6f) / 1e12f;
     float utilization_pct = (effective_tops / peak_tops) * 100.0f;
@@ -408,27 +457,21 @@ static void run_benchmark(uint32_t num_images) {
     float ops_per_byte = (float)total_ops / (float)data_moved_bytes;
     float arithmetic_intensity = (float)total_macs / (float)(weight_bytes + input_bytes);
     
-    // Print Report
-    printf("\n");
-    printf("============================================================\n");
-    printf("        BENCHMARK REPORT - ASL ResNetV2-18 (64x64)          \n");
-    printf("============================================================\n");
-    
+    // Print comprehensive report
     printf("[BASIC STATISTICS]\n");
-    printf("  Total Images:        %lu (queued) x %d loops = %lu inferences\n", num_images, BENCHMARK_LOOPS, total_inferences);
-    printf("  Correct:             %lu/%lu (%.1f%%)\n", correct_count, total_inferences, (double)accuracy);
+    printf("  Total Batches:       %lu\n", total_batches_processed);
+    printf("  Total Images:        %lu\n", total_images_processed);
+    printf("  Correct:             %lu/%lu (%.1f%%)\n", cumulative_correct, total_images_processed, (double)accuracy);
     printf("  Avg Confidence:      %.1f%%\n", (double)avg_confidence);
     printf("------------------------------------------------------------\n");
     
     printf("[LATENCY METRICS]\n");
     printf("  Core Latency (NPU):  %.2f us (%.3f ms)\n", (double)core_latency_us, (double)core_latency_us / 1000.0);
     printf("  System Latency:      %.2f us (%.3f ms)\n", (double)system_latency_us, (double)system_latency_us / 1000.0);
-    printf("  Min Latency:         %lu us\n", min_time);
-    printf("  Max Latency:         %lu us\n", max_time);
-    printf("  Latency Jitter:      %lu us\n", max_time - min_time);
+    printf("  Min Latency:         %lu us\n", cumulative_min_time);
+    printf("  Max Latency:         %lu us\n", cumulative_max_time);
+    printf("  Latency Jitter:      %lu us\n", cumulative_max_time - cumulative_min_time);
     printf("  --- Measured Overhead ---\n");
-    printf("  Load Weights:        %lu us\n", measured_load_weights_time_us);
-    printf("  Load Bias:           %lu us\n", measured_load_bias_time_us);
     printf("  Load Input:          %lu us\n", measured_load_input_time_us);
     printf("  CNN Init:            %lu us\n", measured_init_time_us);
     printf("  CNN Configure:       %lu us\n", measured_configure_time_us);
@@ -439,7 +482,7 @@ static void run_benchmark(uint32_t num_images) {
     
     printf("[THROUGHPUT METRICS]\n");
     printf("  Throughput:          %.2f FPS\n", (double)fps);
-    printf("  Total Time:          %.2f ms (%lu inferences)\n", (double)total_time_us / 1000.0, total_inferences);
+    printf("  Total Time:          %.2f sec (%lu images)\n", (double)cumulative_time_us / 1e6, total_images_processed);
     printf("------------------------------------------------------------\n");
     
     printf("[TOPS ANALYSIS]\n");
@@ -454,8 +497,8 @@ static void run_benchmark(uint32_t num_images) {
     printf("[MEMORY EFFICIENCY]\n");
     printf("  Weight Memory:       %lu bytes (%.1f KB)\n", weight_bytes, (double)weight_bytes / 1024.0);
     printf("  Bias Memory:         %lu bytes\n", bias_bytes);
-    printf("  Input Size:          %lu bytes\n", input_bytes);
-    printf("  Output Size:         %lu bytes\n", output_bytes);
+    printf("  Input Size:          %lu bytes (64x64x3)\n", input_bytes);
+    printf("  Output Size:         %lu bytes (27 classes)\n", output_bytes);
     printf("  Data Movement:       %lu bytes/inference\n", data_moved_bytes);
     printf("  Bandwidth Used:      %.2f MB/s\n", (double)bandwidth_mb_per_sec);
     printf("  Arithmetic Intensity:%.1f ops/byte\n", (double)arithmetic_intensity);
@@ -470,8 +513,9 @@ static void run_benchmark(uint32_t num_images) {
     } else {
         printf("  NPU Efficiency:      LOW (<20%%)\n");
     }
-    printf("  Accuracy:            %s\n", (correct_count == total_inferences) ? "PERFECT" : "PARTIAL");
-    printf("============================================================\n");
+    printf("  Accuracy:            %s\n", (cumulative_correct == total_images_processed) ? "PERFECT" : "PARTIAL");
+    printf("############################################################\n");
+    printf("\n[DONE]\n");
 }
 
 // ============================================================================
@@ -522,8 +566,15 @@ int main(void) {
     
     LED_On(0);
     
+    uint32_t batch_num = 0;
+    
     while (1) {
         queue_head = 0; queue_tail = 0; queue_count = 0;
+        
+        // Only print wait message before first batch
+        if (batch_num == 0) {
+            printf("[INFO] Waiting for start marker (0xDEADBEEF)...\n");
+        }
         
         error = wait_for_benchmark_start(&num_images);
         if (error != E_NO_ERROR) { printf("[ERROR] Failed to receive start: %d\n", error); continue; }
@@ -533,24 +584,46 @@ int main(void) {
             num_images = MAX_QUEUE_SIZE;
         }
         
-        printf("[INFO] Benchmark for %lu images\n", num_images);
+        batch_num++;
+        printf("[INFO] Batch %lu/%d - Expecting %lu images\n", batch_num, TOTAL_BATCHES, num_images);
         
         LED_On(1);
         uint32_t received = receive_all_images(num_images);
         LED_Off(1);
         
-        if (received == 0) { printf("[ERROR] No images received!\n"); continue; }
+        if (received == 0) { printf("[ERROR] No images received!\n"); batch_num--; continue; }
         
         printf("[ACK] Ready to process %lu images\n", received);
         MXC_UART_ClearRXFIFO(RX_UART);
         
-        run_warmup(WARMUP_ITERATIONS);
+        // Run warmup only once before first batch
+        if (!warmup_done) {
+            run_warmup(WARMUP_ITERATIONS);
+            warmup_done = 1;
+        }
         
         LED_On(1);
-        run_benchmark(received);
+        run_benchmark(received, batch_num);
         LED_Off(1);
         
-        printf("\n[DONE] Benchmark complete. Waiting for next batch...\n\n");
+        // Check if all batches are complete
+        if (batch_num >= TOTAL_BATCHES) {
+            print_final_statistics();
+            
+            // Reset for next full benchmark run
+            batch_num = 0;
+            total_batches_processed = 0;
+            total_images_processed = 0;
+            cumulative_correct = 0;
+            cumulative_time_us = 0;
+            cumulative_min_time = 0xFFFFFFFF;
+            cumulative_max_time = 0;
+            cumulative_confidence = 0.0f;
+            warmup_done = 0;
+            
+            printf("\n[INFO] Full benchmark complete. Ready for next run...\n\n");
+        }
+        
         MXC_UART_ClearRXFIFO(RX_UART);
         MXC_Delay(MXC_DELAY_MSEC(100));
     }

@@ -21,13 +21,14 @@ import random
 # ============================================================================
 SERIAL_PORT = 'COM6'        # Default COM port, will auto-detect if this fails
 BAUD_RATE = 115200          # Baud rate for serial communication
-NUM_IMAGES = 8             # Number of images to send (benchmark default)
-USE_TEST_SET = True         # True = test set, False = training set
+NUM_IMAGES = 1000           # Total number of images for full benchmark
+BATCH_SIZE = 5              # Images per batch (must match device MAX_QUEUE_SIZE for 64x64)
+NUM_BATCHES = 200           # Number of batches (1000 / 5 = 200)
+USE_TEST_SET = False        # True = test set, False = training set
 TIMEOUT = 30                # Serial timeout in seconds (longer for batch processing)
 ACT_MODE_8BIT = True        # True = [-128, 127], False = [-128/128, 127/128]
 USE_CHW_FORMAT = True       # True = CHW (Channels,Height,Width), False = HWC (Height,Width,Channels)
 DATASET_PATH = "D:/ASL_Alphabet_Dataset"  # Path to ASL dataset
-MAX_QUEUE_SIZE = 8         # Must match device MAX_QUEUE_SIZE (limited by SRAM for 64x64)
 # ============================================================================
 
 # Image Configuration
@@ -87,7 +88,12 @@ def load_asl_images(dataset_path=DATASET_PATH, num_images=1000, use_test_set=Tru
         
         random.shuffle(test_files)
         
-        for img_path, label in test_files[:num_images]:
+        # Keep loading until we have enough valid images
+        idx = 0
+        while len(images) < num_images and idx < len(test_files):
+            img_path, label = test_files[idx]
+            idx += 1
+            
             if not is_valid_image(img_path):
                 skipped_count += 1
                 continue
@@ -117,7 +123,12 @@ def load_asl_images(dataset_path=DATASET_PATH, num_images=1000, use_test_set=Tru
         
         random.shuffle(all_images)
         
-        for img_path, label in all_images[:num_images]:
+        # Keep loading until we have enough valid images
+        idx = 0
+        while len(images) < num_images and idx < len(all_images):
+            img_path, label = all_images[idx]
+            idx += 1
+            
             if not is_valid_image(img_path):
                 skipped_count += 1
                 continue
@@ -299,17 +310,21 @@ def open_serial_port(port=SERIAL_PORT, baudrate=BAUD_RATE, timeout=TIMEOUT):
     return ser, port_to_use
 
 
-def read_device_output(ser, timeout_seconds=120):
-    """Read and display all output from device until benchmark completes."""
+def read_device_output(ser, timeout_seconds=120, batch_num=None):
+    """
+    Read and display all output from device until batch completes.
+    Looks for [BATCH X/200 COMPLETE] marker for individual batches,
+    or [DONE] for final completion.
+    """
     start_time = time.time()
     device_response = bytearray()
-    benchmark_done = False
+    batch_done = False
     
     print("\n" + "="*70)
     print("DEVICE OUTPUT")
     print("="*70)
     
-    while not benchmark_done and (time.time() - start_time) < timeout_seconds:
+    while not batch_done and (time.time() - start_time) < timeout_seconds:
         if ser.in_waiting > 0:
             chunk = ser.read(ser.in_waiting)
             device_response.extend(chunk)
@@ -318,8 +333,16 @@ def read_device_output(ser, timeout_seconds=120):
                 text = chunk.decode('utf-8', errors='ignore')
                 print(text, end='', flush=True)
                 
-                if '[DONE]' in device_response.decode('utf-8', errors='ignore'):
-                    benchmark_done = True
+                # Check for batch completion marker
+                response_str = device_response.decode('utf-8', errors='ignore')
+                if batch_num is not None:
+                    # Looking for specific batch completion
+                    if f'[BATCH {batch_num}/200 COMPLETE]' in response_str:
+                        batch_done = True
+                else:
+                    # Looking for final completion
+                    if '[DONE]' in response_str or 'BENCHMARK COMPLETE' in response_str:
+                        batch_done = True
             except:
                 pass
         else:
@@ -327,7 +350,205 @@ def read_device_output(ser, timeout_seconds=120):
     
     print("\n" + "="*70)
     
-    return benchmark_done
+    return batch_done
+
+
+def send_asl_benchmark_multibatch(dataset_path=None, num_images=None, batch_size=None, use_test_set=None,
+                                  serial_port=None, baudrate=None, timeout=None,
+                                  act_mode_8bit=None, use_chw=None, interpolation='bilinear'):
+    """
+    Send ASL images (64x64) in multiple batches for benchmarking 1000 images.
+    Sends images in batches of BATCH_SIZE, device processes each batch, then requests next.
+    Protocol: For each batch: [DEADBEEF][NUM_IMAGES(4)][Label0][Image0][Label1][Image1]...
+    
+    Args:
+        dataset_path: path to ASL dataset
+        num_images: total number of images to send (default: 1000)
+        batch_size: number of images per batch (default: 5 for 64x64)
+        use_test_set: if True, use test set; otherwise use training set
+        serial_port: COM port to use
+        baudrate: baud rate for serial communication
+        timeout: timeout in seconds
+        act_mode_8bit: if True, use 8-bit mode; if False, use float mode
+        use_chw: if True, convert to CHW format; if False, keep HWC format
+        interpolation: resizing interpolation method
+    """
+    # Use global defaults if not specified
+    if dataset_path is None:
+        dataset_path = DATASET_PATH
+    if num_images is None:
+        num_images = NUM_IMAGES
+    if batch_size is None:
+        batch_size = BATCH_SIZE
+    if use_test_set is None:
+        use_test_set = USE_TEST_SET
+    if serial_port is None:
+        serial_port = SERIAL_PORT
+    if baudrate is None:
+        baudrate = BAUD_RATE
+    if timeout is None:
+        timeout = TIMEOUT
+    if act_mode_8bit is None:
+        act_mode_8bit = ACT_MODE_8BIT
+    if use_chw is None:
+        use_chw = USE_CHW_FORMAT
+    
+    # Calculate number of batches
+    num_batches = (num_images + batch_size - 1) // batch_size  # Ceiling division
+    
+    print("="*70)
+    print("ASL Alphabet Multi-Batch Benchmark Sender (64x64)")
+    print("="*70)
+    print(f"Configuration:")
+    print(f"  - Dataset path:      {dataset_path}")
+    print(f"  - Total images:      {num_images}")
+    print(f"  - Batch size:        {batch_size} images")
+    print(f"  - Number of batches: {num_batches}")
+    print(f"  - Dataset:           {'Test' if use_test_set else 'Training'} set")
+    print(f"  - Image size:        {IMAGE_SIZE}x{IMAGE_SIZE}")
+    print(f"  - Interpolation:     {interpolation}")
+    print(f"  - Bytes per image:   {BYTES_PER_IMAGE} bytes")
+    print(f"  - Total data:        {(BYTES_PER_IMAGE * num_images) / 1024:.2f} KB")
+    print(f"  - Serial port:       {serial_port}")
+    print(f"  - Baud rate:         {baudrate}")
+    print(f"  - Normalization:     {'8-bit [-128, 127]' if act_mode_8bit else 'Float [-1, 1]'}")
+    print(f"  - Data format:       {'CHW' if use_chw else 'HWC'}")
+    
+    # Load all images
+    print(f"\nLoading {num_images} images from dataset...")
+    images, labels, image_paths = load_asl_images(dataset_path, num_images, use_test_set)
+    
+    if len(images) == 0:
+        print("No images loaded! Check dataset path.")
+        return False
+    
+    # Preprocess all images first (do this before opening port)
+    print(f"Preprocessing {len(images)} images...")
+    preprocessed_images = []
+    for idx in tqdm(range(len(images)), desc="Preprocessing"):
+        image_data = preprocess_image_for_cnn(images[idx], act_mode_8bit, use_chw, interpolation)
+        preprocessed_images.append((image_data, labels[idx]))
+    
+    # Open serial port
+    ser, port_name = open_serial_port(serial_port, baudrate, timeout)
+    if ser is None:
+        print("Failed to open serial port!")
+        return False
+    
+    # Wait for device to be ready
+    print("\nWaiting for device to initialize...")
+    time.sleep(2)
+    
+    print("\n" + "="*70)
+    print(f"Starting 1000-image benchmark ({num_batches} batches)")
+    print("="*70 + "\n")
+    
+    overall_start_time = time.time()
+    total_tx_time = 0
+    
+    try:
+        # Send each batch
+        for batch_idx in range(num_batches):
+            batch_num = batch_idx + 1
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, len(preprocessed_images))
+            current_batch_size = end_idx - start_idx
+            
+            print(f"\n{'='*70}")
+            print(f"BATCH {batch_num}/{num_batches} (Images {start_idx+1}-{end_idx})")
+            print(f"{'='*70}")
+            
+            # Clear buffers
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+            
+            # Send batch header
+            print(f"Sending batch header ({current_batch_size} images)...")
+            if not send_batch_header(ser, current_batch_size):
+                print(f"Failed to send batch {batch_num} header!")
+                return False
+            
+            # Wait for device READY signal
+            print("Waiting for device READY signal...")
+            if not wait_for_ready(ser, timeout_seconds=10):
+                print(f"Device did not respond for batch {batch_num}!")
+                return False
+            
+            # Send images for this batch
+            print(f"Transmitting {current_batch_size} images...")
+            batch_tx_start = time.time()
+            
+            for img_idx in tqdm(range(start_idx, end_idx), desc=f"Batch {batch_num}/{num_batches}"):
+                image_data, label = preprocessed_images[img_idx]
+                if not send_image_data(ser, image_data, label):
+                    print(f"\nFailed to send image {img_idx}!")
+                    return False
+            
+            batch_tx_time = time.time() - batch_tx_start
+            total_tx_time += batch_tx_time
+            
+            print(f"✓ Batch {batch_num} sent in {batch_tx_time:.2f}s " + 
+                  f"({(BYTES_PER_IMAGE * current_batch_size) / batch_tx_time / 1024:.1f} KB/s)")
+            
+            # Wait for device to process this batch
+            print(f"Device processing batch {batch_num}...")
+            
+            # Read device output for this batch (shortened timeout per batch)
+            batch_complete = read_device_output(ser, timeout_seconds=60, batch_num=batch_num)
+            
+            if not batch_complete:
+                print(f"⚠ Warning: Batch {batch_num} processing may have timed out")
+            
+            # Small delay between batches
+            if batch_num < num_batches:
+                time.sleep(0.5)
+        
+        # All batches sent, wait for final report
+        print(f"\n{'='*70}")
+        print("All batches sent! Waiting for final statistics...")
+        print(f"{'='*70}\n")
+        
+        # Give device extra time to print final report
+        time.sleep(2)
+        
+        # Read final statistics
+        final_output_start = time.time()
+        while (time.time() - final_output_start) < 30:
+            if ser.in_waiting > 0:
+                chunk = ser.read(ser.in_waiting)
+                try:
+                    print(chunk.decode('utf-8', errors='ignore'), end='', flush=True)
+                except:
+                    pass
+            else:
+                time.sleep(0.1)
+        
+        overall_time = time.time() - overall_start_time
+        
+        print(f"\n{'='*70}")
+        print("BENCHMARK COMPLETE")
+        print(f"{'='*70}")
+        print(f"Total images:        {len(preprocessed_images)}")
+        print(f"Total batches:       {num_batches}")
+        print(f"Total TX time:       {total_tx_time:.2f}s")
+        print(f"Overall time:        {overall_time:.2f}s ({overall_time/60:.1f} min)")
+        print(f"Avg TX rate:         {(BYTES_PER_IMAGE * len(preprocessed_images)) / total_tx_time / 1024:.1f} KB/s")
+        print(f"{'='*70}\n")
+        
+        return True
+        
+    except KeyboardInterrupt:
+        print("\n\n⚠ Benchmark interrupted by user")
+        return False
+    except Exception as e:
+        print(f"\n⚠ Error during benchmark: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    finally:
+        if ser and ser.is_open:
+            ser.close()
+            print(f"Serial port {port_name} closed.")
 
 
 def get_class_name(label):
@@ -357,10 +578,6 @@ def send_asl_benchmark(dataset_path=None, num_images=None, use_test_set=None,
         act_mode_8bit = ACT_MODE_8BIT
     if use_chw is None:
         use_chw = USE_CHW_FORMAT
-    
-    if num_images > MAX_QUEUE_SIZE:
-        print(f"Warning: Limiting images to {MAX_QUEUE_SIZE} (device queue limit)")
-        num_images = MAX_QUEUE_SIZE
     
     print("="*70)
     print("ASL Alphabet Benchmark Sender (64x64 Queue-based Protocol)")
@@ -420,7 +637,7 @@ def send_asl_benchmark(dataset_path=None, num_images=None, use_test_set=None,
             ser.reset_input_buffer()
             ser.reset_output_buffer()
             
-            actual_num_images = min(len(preprocessed_images), MAX_QUEUE_SIZE)
+            actual_num_images = len(preprocessed_images)
             
             print(f"\nSending batch header (N={actual_num_images})...")
             if not send_batch_header(ser, actual_num_images):
@@ -488,9 +705,11 @@ def send_asl_benchmark(dataset_path=None, num_images=None, use_test_set=None,
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Send ASL images to MAX78000 via UART (Benchmark Mode)')
+    parser = argparse.ArgumentParser(description='Send ASL images to MAX78000 via UART (Multi-Batch Benchmark Mode)')
     parser.add_argument('-n', '--num-images', type=int, default=None,
-                        help=f'Number of images to send (default: {NUM_IMAGES}, max: {MAX_QUEUE_SIZE})')
+                        help=f'Total number of images to send (default: {NUM_IMAGES})')
+    parser.add_argument('-b', '--batch-size', type=int, default=None,
+                        help=f'Number of images per batch (default: {BATCH_SIZE})')
     parser.add_argument('--train-set', action='store_true',
                         help='Use training set instead of test set')
     parser.add_argument('--dataset', type=str, default=None,
@@ -512,16 +731,17 @@ def main():
     args = parser.parse_args()
     
     print("="*70)
-    print("ASL Alphabet Benchmark Tool for MAX78000")
+    print("ASL Alphabet Multi-Batch Benchmark Tool for MAX78000")
     print("="*70)
     
     use_chw = not args.hwc
     act_mode_8bit = not args.float_mode
     
-    send_asl_benchmark(
+    success = send_asl_benchmark_multibatch(
         dataset_path=args.dataset,
         num_images=args.num_images,
-        use_test_set=not args.train_set,
+        batch_size=args.batch_size,
+        use_test_set=True if args.train_set else None,  # None = use default (False), --train-set = explicitly False
         serial_port=args.port,
         baudrate=args.baudrate,
         timeout=args.timeout,
@@ -529,6 +749,11 @@ def main():
         use_chw=use_chw,
         interpolation=args.interpolation
     )
+    
+    if success:
+        print("\n✓ Multi-batch benchmark completed successfully")
+    else:
+        print("\n✗ Multi-batch benchmark failed")
 
 
 if __name__ == "__main__":

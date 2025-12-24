@@ -17,12 +17,13 @@ import argparse
 # ============================================================================
 SERIAL_PORT = 'COM6'        # Default COM port, will auto-detect if this fails
 BAUD_RATE = 115200          # Baud rate for serial communication
-NUM_IMAGES = 50             # Number of images to send (benchmark default)
+NUM_IMAGES = 1000           # Total number of images for full benchmark
+BATCH_SIZE = 20             # Images per batch (must match device MAX_QUEUE_SIZE)
+NUM_BATCHES = 50            # Number of batches (1000 / 20 = 50)
 USE_TEST_SET = True         # True = test set, False = training set
 TIMEOUT = 30                # Serial timeout in seconds (longer for batch processing)
 ACT_MODE_8BIT = True        # True = [-128, 127], False = [-128/128, 127/128]
 USE_CHW_FORMAT = True       # True = CHW (Channels,Height,Width), False = HWC (Height,Width,Channels)
-MAX_QUEUE_SIZE = 30         # Must match device MAX_QUEUE_SIZE (limited by SRAM)
 # ============================================================================
 
 # Image Configuration (CIFAR-100 standard)
@@ -278,20 +279,21 @@ def open_serial_port(port=SERIAL_PORT, baudrate=BAUD_RATE, timeout=TIMEOUT):
     return ser, port_to_use
 
 
-def read_device_output(ser, timeout_seconds=60):
+def read_device_output(ser, timeout_seconds=60, batch_num=None):
     """
-    Read and display all output from device until benchmark completes.
-    Looks for [DONE] marker to know when benchmark is finished.
+    Read and display all output from device until batch completes.
+    Looks for [BATCH X/50 COMPLETE] marker for individual batches,
+    or [DONE] for final completion.
     """
     start_time = time.time()
     device_response = bytearray()
-    benchmark_done = False
+    batch_done = False
     
     print("\n" + "="*70)
     print("DEVICE OUTPUT")
     print("="*70)
     
-    while not benchmark_done and (time.time() - start_time) < timeout_seconds:
+    while not batch_done and (time.time() - start_time) < timeout_seconds:
         if ser.in_waiting > 0:
             chunk = ser.read(ser.in_waiting)
             device_response.extend(chunk)
@@ -301,9 +303,17 @@ def read_device_output(ser, timeout_seconds=60):
                 text = chunk.decode('utf-8', errors='ignore')
                 print(text, end='', flush=True)
                 
-                # Check if benchmark is done
-                if '[DONE]' in device_response.decode('utf-8', errors='ignore'):
-                    benchmark_done = True
+                response_str = device_response.decode('utf-8', errors='ignore')
+                
+                # Check if batch is complete
+                if batch_num is not None:
+                    # Looking for specific batch completion
+                    if f'[BATCH {batch_num}/50 COMPLETE]' in response_str:
+                        batch_done = True
+                else:
+                    # Looking for final done marker
+                    if '[DONE]' in response_str or 'BENCHMARK COMPLETE' in response_str:
+                        batch_done = True
             except:
                 pass
         else:
@@ -311,19 +321,20 @@ def read_device_output(ser, timeout_seconds=60):
     
     print("\n" + "="*70)
     
-    return benchmark_done
+    return batch_done
 
 
-def send_cifar100_benchmark(num_images=None, use_test_set=None,
-                            serial_port=None, baudrate=None, timeout=None,
-                            act_mode_8bit=None, use_chw=None):
+def send_cifar100_benchmark_multibatch(num_images=None, batch_size=None, use_test_set=None,
+                                       serial_port=None, baudrate=None, timeout=None,
+                                       act_mode_8bit=None, use_chw=None):
     """
-    Send CIFAR-100 images as a batch for benchmarking.
-    Keeps port open and runs continuously until Ctrl+C.
-    New protocol: [DEADBEEF][NUM_IMAGES(4)][Label0][Image0][Label1][Image1]...
+    Send CIFAR-100 images in multiple batches for benchmarking 1000 images.
+    Sends images in batches of BATCH_SIZE, device processes each batch, then requests next.
+    Protocol: For each batch: [DEADBEEF][NUM_IMAGES(4)][Label0][Image0][Label1][Image1]...
     
     Args:
-        num_images: number of images to send
+        num_images: total number of images to send (default: 1000)
+        batch_size: number of images per batch (default: 20)
         use_test_set: if True, use test set; otherwise use training set
         serial_port: COM port to use
         baudrate: baud rate for serial communication
@@ -334,6 +345,8 @@ def send_cifar100_benchmark(num_images=None, use_test_set=None,
     # Use global defaults if not specified
     if num_images is None:
         num_images = NUM_IMAGES
+    if batch_size is None:
+        batch_size = BATCH_SIZE
     if use_test_set is None:
         use_test_set = USE_TEST_SET
     if serial_port is None:
@@ -347,144 +360,167 @@ def send_cifar100_benchmark(num_images=None, use_test_set=None,
     if use_chw is None:
         use_chw = USE_CHW_FORMAT
     
-    # Limit to max queue size
-    if num_images > MAX_QUEUE_SIZE:
-        print(f"Warning: Limiting images to {MAX_QUEUE_SIZE} (device queue limit)")
-        num_images = MAX_QUEUE_SIZE
+    # Calculate number of batches
+    num_batches = (num_images + batch_size - 1) // batch_size  # Ceiling division
     
     print("="*70)
-    print("CIFAR-100 Benchmark Sender (Queue-based Protocol)")
+    print("CIFAR-100 Multi-Batch Benchmark Sender")
     print("="*70)
     print(f"Configuration:")
-    print(f"  - Number of images: {num_images}")
-    print(f"  - Dataset: {'Test' if use_test_set else 'Training'} set")
-    print(f"  - Image size: {IMAGE_SIZE}x{IMAGE_SIZE}")
-    print(f"  - Bytes per image: {BYTES_PER_IMAGE} bytes")
-    print(f"  - Total data: {(BYTES_PER_IMAGE * num_images) / 1024:.2f} KB")
-    print(f"  - Serial port: {serial_port}")
-    print(f"  - Baud rate: {baudrate}")
-    print(f"  - Normalization: {'8-bit [-128, 127]' if act_mode_8bit else 'Float [-1, 1]'}")
-    print(f"  - Data format: {'CHW' if use_chw else 'HWC'}")
+    print(f"  - Total images:      {num_images}")
+    print(f"  - Batch size:        {batch_size} images")
+    print(f"  - Number of batches: {num_batches}")
+    print(f"  - Dataset:           {'Test' if use_test_set else 'Training'} set")
+    print(f"  - Image size:        {IMAGE_SIZE}x{IMAGE_SIZE}")
+    print(f"  - Bytes per image:   {BYTES_PER_IMAGE} bytes")
+    print(f"  - Total data:        {(BYTES_PER_IMAGE * num_images) / 1024:.2f} KB")
+    print(f"  - Serial port:       {serial_port}")
+    print(f"  - Baud rate:         {baudrate}")
+    print(f"  - Normalization:     {'8-bit [-128, 127]' if act_mode_8bit else 'Float [-1, 1]'}")
+    print(f"  - Data format:       {'CHW' if use_chw else 'HWC'}")
     
-    # Load images
+    # Load all images
+    print(f"\nLoading {num_images} images from dataset...")
     images, labels = load_cifar100_images(num_images, use_test_set)
     
     # Preprocess all images first (do this before opening port)
-    print(f"\nPreprocessing {num_images} images...")
+    print(f"Preprocessing {num_images} images...")
     preprocessed_images = []
     for idx in tqdm(range(num_images), desc="Preprocessing"):
         image_data = preprocess_image_for_cnn(images[idx], act_mode_8bit, use_chw)
         preprocessed_images.append((image_data, labels[idx]))
     
-    # Main loop - keep trying to open port and run benchmarks
-    ser = None
-    run_count = 0
+    # Open serial port
+    ser, port_name = open_serial_port(serial_port, baudrate, timeout)
+    if ser is None:
+        print("Failed to open serial port!")
+        return False
+    
+    # Wait for device to be ready
+    print("\nWaiting for device to initialize...")
+    time.sleep(2)
     
     print("\n" + "="*70)
-    print("Starting continuous benchmark mode (Press Ctrl+C to stop)")
-    print("="*70)
+    print(f"Starting 1000-image benchmark ({num_batches} batches)")
+    print("="*70 + "\n")
+    
+    overall_start_time = time.time()
+    total_tx_time = 0
     
     try:
-        while True:
-            # Open serial port if not already open
-            if ser is None or not ser.is_open:
-                ser, port_name = open_serial_port(serial_port, baudrate, timeout)
-                if ser is None:
-                    print("\nRetrying in 3 seconds...")
-                    time.sleep(3)
-                    continue
-                
-                # Wait for device to be ready after opening port
-                print("\nWaiting for device to be ready...")
-                time.sleep(2)
+        # Send each batch
+        for batch_idx in range(num_batches):
+            batch_num = batch_idx + 1
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, num_images)
+            current_batch_size = end_idx - start_idx
             
-            run_count += 1
             print(f"\n{'='*70}")
-            print(f"BENCHMARK RUN #{run_count}")
+            print(f"BATCH {batch_num}/{num_batches} (Images {start_idx+1}-{end_idx})")
             print(f"{'='*70}")
             
-            # Clear any existing data in buffers
+            # Clear buffers
             ser.reset_input_buffer()
             ser.reset_output_buffer()
             
             # Send batch header
-            print(f"\nSending batch header (N={num_images})...")
-            if not send_batch_header(ser, num_images):
-                print("Failed to send batch header! Reconnecting...")
-                ser.close()
-                ser = None
-                time.sleep(1)
-                continue
+            print(f"Sending batch header ({current_batch_size} images)...")
+            if not send_batch_header(ser, current_batch_size):
+                print(f"Failed to send batch {batch_num} header!")
+                return False
             
-            # Wait for device to signal it's ready to receive
+            # Wait for device READY signal
             print("Waiting for device READY signal...")
             if not wait_for_ready(ser, timeout_seconds=10):
-                print("Device did not respond with READY! Reconnecting...")
-                ser.close()
-                ser = None
-                time.sleep(1)
-                continue
+                print(f"Device did not respond for batch {batch_num}!")
+                return False
             
-            print("Device ready, sending images...")
+            # Send images for this batch
+            print(f"Transmitting {current_batch_size} images...")
+            batch_tx_start = time.time()
             
-            # Send all images
-            print(f"Sending {num_images} images...")
-            tx_start_time = time.time()
-            
-            send_failed = False
-            for idx, (image_data, label) in enumerate(tqdm(preprocessed_images, desc="Transmitting")):
+            for img_idx in tqdm(range(start_idx, end_idx), desc=f"Batch {batch_num}/{num_batches}"):
+                image_data, label = preprocessed_images[img_idx]
                 if not send_image_data(ser, image_data, label):
-                    print(f"\nFailed to send image {idx}! Reconnecting...")
-                    send_failed = True
-                    break
+                    print(f"\nFailed to send image {img_idx}!")
+                    return False
             
-            if send_failed:
-                ser.close()
-                ser = None
-                time.sleep(1)
-                continue
+            batch_tx_time = time.time() - batch_tx_start
+            total_tx_time += batch_tx_time
             
-            tx_end_time = time.time()
-            tx_time = tx_end_time - tx_start_time
+            print(f"✓ Batch {batch_num} sent in {batch_tx_time:.2f}s " + 
+                  f"({(BYTES_PER_IMAGE * current_batch_size) / batch_tx_time / 1024:.1f} KB/s)")
             
-            print(f"\n✓ All {num_images} images sent in {tx_time:.2f}s")
-            print(f"  Transmission rate: {(BYTES_PER_IMAGE * num_images) / tx_time / 1024:.2f} KB/s")
+            # Wait for device to process this batch
+            print(f"Device processing batch {batch_num}...")
             
-            # Wait for device to process all images and report results
-            print("\nWaiting for device to complete benchmark...")
-            benchmark_complete = read_device_output(ser, timeout_seconds=120)
+            # Read device output for this batch (shortened timeout per batch)
+            batch_complete = read_device_output(ser, timeout_seconds=60, batch_num=batch_num)
             
-            if benchmark_complete:
-                print(f"\n✓ Benchmark run #{run_count} completed successfully!")
+            if not batch_complete:
+                print(f"⚠ Warning: Batch {batch_num} processing may have timed out")
+            
+            # Small delay between batches
+            if batch_num < num_batches:
+                time.sleep(0.5)
+        
+        # All batches sent, wait for final report
+        print(f"\n{'='*70}")
+        print("All batches sent! Waiting for final statistics...")
+        print(f"{'='*70}\n")
+        
+        # Give device extra time to print final report
+        time.sleep(2)
+        
+        # Read final statistics
+        final_output_start = time.time()
+        while (time.time() - final_output_start) < 30:
+            if ser.in_waiting > 0:
+                chunk = ser.read(ser.in_waiting)
+                try:
+                    text = chunk.decode('utf-8', errors='ignore')
+                    print(text, end='', flush=True)
+                except:
+                    pass
             else:
-                print(f"\n⚠ Benchmark run #{run_count} may not have completed (timeout)")
-            
-            # Small delay before next run
-            print("\nWaiting 10 seconds before next run... (Ctrl+C to stop)")
-            time.sleep(10)
-            
+                time.sleep(0.01)
+        
+        overall_time = time.time() - overall_start_time
+        
+        print(f"\n{'='*70}")
+        print("BENCHMARK COMPLETE")
+        print(f"{'='*70}")
+        print(f"Total images:        {num_images}")
+        print(f"Total batches:       {num_batches}")
+        print(f"Total TX time:       {total_tx_time:.2f}s")
+        print(f"Overall time:        {overall_time:.2f}s ({overall_time/60:.1f} min)")
+        print(f"Avg TX rate:         {(BYTES_PER_IMAGE * num_images) / total_tx_time / 1024:.1f} KB/s")
+        print(f"{'='*70}\n")
+        
+        return True
+        
     except KeyboardInterrupt:
         print("\n\n" + "="*70)
         print("Keyboard interrupt received. Stopping...")
-        print(f"Total benchmark runs completed: {run_count}")
         print("="*70)
+        return False
     
     finally:
         # Close serial port
         if ser is not None and ser.is_open:
             ser.close()
             print("Serial port closed")
-    
-    return True
 
 
 def main():
     """
     Main entry point with command line arguments
     """
-    parser = argparse.ArgumentParser(description='Send CIFAR-100 images to MAX78000 via UART (Benchmark Mode)')
+    parser = argparse.ArgumentParser(description='Send CIFAR-100 images to MAX78000 via UART (Multi-Batch Benchmark)')
     parser.add_argument('--num-images', type=int, default=None,
-                        help=f'Number of images to send (default: {NUM_IMAGES}, max: {MAX_QUEUE_SIZE})')
+                        help=f'Total number of images to send (default: {NUM_IMAGES})')
+    parser.add_argument('--batch-size', type=int, default=None,
+                        help=f'Images per batch (default: {BATCH_SIZE})')
     parser.add_argument('--train-set', action='store_true',
                         help='Use training set instead of test set')
     parser.add_argument('--port', type=str, default=None,
@@ -501,7 +537,7 @@ def main():
     args = parser.parse_args()
     
     print("="*70)
-    print("CIFAR-100 Benchmark Tool for MAX78000")
+    print("CIFAR-100 Multi-Batch Benchmark Tool for MAX78000")
     print("="*70)
     print("Required packages: pyserial, tensorflow, numpy, tqdm")
     print("Install with: pip install pyserial tensorflow numpy tqdm\n")
@@ -510,8 +546,9 @@ def main():
     use_chw = not args.hwc
     act_mode_8bit = not args.float_mode
     
-    success = send_cifar100_benchmark(
+    success = send_cifar100_benchmark_multibatch(
         num_images=args.num_images,
+        batch_size=args.batch_size,
         use_test_set=not args.train_set,
         serial_port=args.port,
         baudrate=args.baudrate,
@@ -521,9 +558,9 @@ def main():
     )
     
     if success:
-        print("\n✓ Benchmark session completed successfully")
+        print("\n✓ Benchmark completed successfully")
     else:
-        print("\n✗ Benchmark session failed")
+        print("\n✗ Benchmark failed")
 
 
 if __name__ == "__main__":
